@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Điện Nước</string>
+    <string name="title_activity_main">Điện Nước</string>
+    <string name="package_name">vn.dio.diennuoc</string>
+    <string name="custom_url_scheme">vn.dio.diennuoc</string>
+</resources>

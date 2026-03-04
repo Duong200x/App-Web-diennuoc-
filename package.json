@@ -1,0 +1,33 @@
+{
+  "name": "dien-nuoc-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:apk": "vite build --mode apk && npx cap sync android",
+    "preview": "vite preview",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "5.7.8",
+    "@capacitor/cli": "5.7.8",
+    "@capacitor/core": "5.7.8",
+    "vite": "^7.1.0",
+    "vite-plugin-pwa": "^1.0.2"
+  },
+  "dependencies": {
+    "@capacitor/filesystem": "5.2.2",
+    "@capacitor/status-bar": "^5.0.8",
+    "cordova-plugin-android-permissions": "^1.1.5",
+    "cordova-plugin-bluetooth-serial": "^0.4.7",
+    "docx": "^9.5.1",
+    "exceljs": "^4.4.0",
+    "firebase": "^12.1.0",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4",
+    "xlsx": "^0.18.5"
+  }
+  
+}

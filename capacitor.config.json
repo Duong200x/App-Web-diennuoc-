@@ -1,0 +1,6 @@
+{
+  "appId": "vn.dio.diennuoc",
+  "appName": "Điện Nước",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" }
+}

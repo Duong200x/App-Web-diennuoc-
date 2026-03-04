@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <!-- make -->
+    <meta charset="utf-8" />
+    <!-- Viewport chuẩn, hỗ trợ safe-area -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Ghi chỉ số điện nước, tính tiền, xuất phiếu Word/Excel" />
+    <meta name="theme-color" content="#0d6efd" />
+
+    <!-- PWA / iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ĐiệnNước" />
+    <link rel="apple-touch-icon" href="/icons/6.png" />
+    <link rel="icon" href="/icons/6.png" type="image/png" />
+
+    <title>Quản lý ghi số điện nước</title>
+
+    <!-- Guard CSS: loại bỏ margin mặc định và bù safe-area khi cần -->
+    <style>
+      html, body { height: 100%; }
+      body { margin: 0; }
+      /* Nếu ROM nào đó vẫn overlay status bar, header sẽ tự bù tai thỏ */
+      .topbar { padding-top: env(safe-area-inset-top); }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1 class="app-title"><a href="#/list">Quản lý ghi số điện nước</a></h1>
+      <!-- by -->
+      <!-- Chỉ giữ 2 mục ngoài topbar -->
+      <nav class="nav">
+        <a href="#/list">Danh sách</a>
+        <a href="#/add">Thêm cư dân</a>
+      </nav>
+
+      <!-- Nút bóng đèn + menu ba gạch -->
+      <div class="topbar-actions">
+        <button id="theme-toggle" class="icon-btn" aria-label="Chuyển giao diện">
+          <span class="icon-light">💡</span>
+          <span class="icon-dark" style="display:none;">🌙</span>
+        </button>
+        <button id="menu-toggle" class="icon-btn" aria-label="Mở menu">☰</button>
+      </div>
+    </header>
+    <!-- trandinh -->
+    <!-- Panel menu xổ xuống (gom các chức năng còn lại) -->
+    <div id="side-menu" class="menu-panel" hidden>
+      <a href="#/history"  class="menu-item">Lịch sử</a>
+      <a href="#/config"   class="menu-item">Điều chỉnh giá</a>
+      <a href="#/template" class="menu-item">Mẫu phiếu</a>
+      <a href="#/room"     class="menu-item">Phòng</a>
+    </div>
+    <!--duong-->
+    <main id="app"></main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

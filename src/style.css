@@ -1,0 +1,305 @@
+/* ===== Reset & tokens ===== */
+* { box-sizing: border-box; }
+:root{
+  --bg:#f6f7f9; --card:#fff; --border:#e6e8ec;
+  --text:#111827; --muted:#374151;
+  --primary:#0d6efd; --primary-700:#0b5ed7;
+  --shadow:0 8px 24px rgba(15,23,42,.06);
+  --radius:14px;
+  --page-max:1100px;
+  --thead-bg:#f3f4f6;
+  --chip-bg:#f9fafb;
+
+  /* Safe area cho thiết bị có tai thỏ */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* sẽ được router cập nhật đúng mỗi lần render */
+  --topbar-h: 56px;
+}
+html,body,#app{height:100%;}
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--bg); color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: var(--safe-bottom);
+}
+
+/* ===== Layout ===== */
+#app { position: relative; } /* để overlay bám theo app, không che topbar */
+
+.topbar{
+  position: sticky; top:0; z-index:150;   /* luôn nổi trên overlay */
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding: calc(14px + var(--safe-top)) calc(18px + var(--safe-right)) 14px calc(18px + var(--safe-left));
+  background:var(--card); border-bottom:1px solid var(--border);
+  backdrop-filter: blur(4px);
+}
+.app-title{margin:0; font-size:20px; font-weight:700;}
+.app-title a{ color: var(--primary); text-decoration: none; }
+
+.container{
+  width:100%; max-width: var(--page-max);
+  margin: 18px auto; padding: 0 16px;
+}
+
+.card{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow: var(--shadow); padding: 18px;
+}
+h2{ margin: 0 0 12px; font-size: 20px; }
+
+/* ===== Nav ===== */
+.nav{ display:flex; gap:10px; flex-wrap: wrap; }
+.nav a{
+  display:inline-flex; align-items:center; gap:8px;
+  background: var(--primary); color:#fff; text-decoration:none;
+  border-radius: 10px; padding: 10px 14px; font-size: 15px;
+  transition: background .15s ease, transform .05s ease;
+}
+.nav a:hover{ background: var(--primary-700); }
+.nav a:active{ transform: translateY(1px); }
+
+/* ===== Topbar actions ===== */
+.topbar-actions{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:10px; border:1px solid var(--border);
+  background: var(--card); color: var(--text); cursor:pointer; user-select:none;
+}
+.icon-btn:hover{ background: rgba(13,110,253,.08); }
+
+/* ===== Buttons ===== */
+.btn{
+  display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+  border:0; border-radius:10px; padding:10px 14px; font-size:15px;
+  background: var(--primary); color:#fff; user-select:none;
+}
+.btn:hover{ background: var(--primary-700); }
+.btn.secondary{ background:#6c757d; color:#fff; }
+.btn.secondary:hover{ background:#555e64; }
+.btn.ghost{
+  background: transparent; color: var(--primary); border: 1px solid var(--primary);
+}
+.btn.ghost:hover{ background: rgba(13,110,253,.08); }
+.btn[disabled], .btn:disabled{ opacity:.55; cursor:not-allowed; pointer-events:none; }
+
+/* ===== Inputs & forms ===== */
+.form-grid{
+  display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap:12px;
+}
+.label{ font-weight:600; margin-bottom:6px; display:block; }
+.input{
+  width:100%; padding:12px 10px; font-size:16px;
+  border:1px solid #c9cfd6; border-radius:10px; outline:none; background:#fff;
+  color: var(--text);
+}
+.input::placeholder{ color:#6b7280; }
+.input:focus{ border-color: var(--primary); box-shadow: 0 0 0 3px rgba(13,110,253,.15); }
+.helper{ font-size:12px; color:var(--muted); margin-top:4px; min-height:16px; }
+
+/* ===== Table ===== */
+.table-wrap{
+  position:relative;
+  overflow-x:auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--card); border-radius: var(--radius);
+  border:1px solid var(--border);
+}
+.table{
+  width:100%; min-width: 900px;
+  border-collapse: collapse;
+}
+.table th, .table td{
+  padding:10px 12px; border-bottom:1px solid var(--border); text-align:left;
+  vertical-align: middle; color: var(--text);
+}
+.table thead th{
+  position: sticky; top: 0; z-index:1;
+  background: var(--thead-bg); font-weight:700;
+}
+.table tbody tr:hover{ background:#fafafa; }
+.table .actions{ display:flex; gap:8px; flex-wrap: wrap; }
+
+/* ===== Sum bar (list) ===== */
+.sumbar{
+  display:grid; grid-template-columns:repeat(3, minmax(0,1fr));
+  gap:12px; margin:10px 0 8px;
+}
+.sumbar .sum-item{
+  background: var(--chip-bg);
+  border:1px solid var(--border);
+  border-radius:12px; padding:10px 12px;
+}
+.sumbar .label{
+  font-size:.85rem; color: var(--muted); font-weight:600; letter-spacing:.2px;
+}
+.sumbar .value{
+  margin-top:2px; font-weight:800; font-size:1.2rem;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.sumbar .total .value{ font-size:1.28rem; }
+
+/* ===== Bảng “Theo khu” ===== */
+#zoneTotalsTbl thead th{
+  background: transparent;
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing:.5px;
+}
+#zoneTotalsTbl tbody td{ color: var(--text); }
+
+/* ===== Hamburger menu panel ===== */
+.menu-panel{
+  position: fixed;
+  top: calc(var(--topbar-h) + 8px);
+  right: 12px;
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column; min-width: 210px;
+  padding: 8px;
+  z-index: 200;               /* cao hơn overlay để click được */
+  pointer-events: auto;
+}
+.menu-panel[hidden]{ display:none !important; }
+.menu-item{
+  padding: 10px 12px; border-radius: 8px; text-decoration: none; color: var(--text);
+}
+.menu-item:hover{ background: rgba(13,110,253,.08); }
+
+/* ===== Utilities ===== */
+.spacer{ height: 8px; }
+.toolbar{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.center{ display:flex; align-items:center; justify-content:center; }
+
+/* ===== Thanh xem nhanh số nhập ===== */
+.value-preview{
+  position: fixed;
+  left: 0; right: 0;
+  top: var(--safe-top);
+  transform: translateY(-100%);
+  transition: transform .2s ease;
+  z-index: 1000;
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  padding: 10px 16px;
+  text-align: center;
+  font-weight: 700;
+  font-size: clamp(18px, 5.2vw, 28px);
+  line-height: 1.2;
+  backdrop-filter: saturate(140%) blur(6px);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
+  pointer-events: none;
+}
+.value-preview.show{ transform: translateY(0); }
+.value-preview .label{ font-size: 12px; font-weight: 600; opacity: .85; margin-right: 10px; }
+
+/* ===== Overlay vùng route (cuộn nội dung ở đây, không che topbar) ===== */
+#route-overlay[hidden]{ display:none !important; }
+#route-overlay{
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  top: var(--topbar-h);            /* JS set đúng với chiều cao thật của .topbar */
+  z-index: 100;                    /* dưới topbar, trên nền */
+  background: var(--bg);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--safe-bottom);
+}
+#route-overlay-content{ min-height: 100%; }
+
+/* ===== Mobile tweaks ===== */
+@media (max-width: 768px){
+  .container{ max-width:100%; margin: 12px auto; padding: 0 12px; }
+  h2{ font-size: 18px; }
+  .btn{ padding: 10px 12px; font-size: 15px; }
+  .table{ min-width: 760px; }
+}
+
+/* ===== Large screen polish ===== */
+@media (min-width: 1280px){
+  .container{ padding: 0 20px; }
+}
+
+/* ===== Dark theme ===== */
+.theme-dark{
+  --bg:#0f1115; --card:#151a21; --border:#2a2f3a;
+  --text:#e5e7eb; --muted:#94a3b8;
+  --primary:#4c8dff; --primary-700:#3f7ae0;
+  --shadow:0 8px 24px rgba(0,0,0,.45);
+  --thead-bg:#1b212a;
+  --chip-bg:#0f172a;
+}
+.theme-dark body{ background: var(--bg); color: var(--text); }
+.theme-dark .card{ background: var(--card); border-color: var(--border); }
+.theme-dark .topbar{ background: var(--card); border-bottom-color: var(--border); }
+.theme-dark .input{
+  background:#1c232c; border-color:#2f3743; color: var(--text);
+}
+.theme-dark .input::placeholder{ color:#9aa4b2; }
+.theme-dark .table tbody tr:hover{ background:#17202a; }
+.theme-dark .btn.ghost:hover{ background: rgba(76,141,255,.12); }
+.theme-dark .btn.secondary{
+  background:#3a4150; color:#e5e7eb; border:1px solid #4b5563;
+}
+.theme-dark .btn.secondary:hover{ background:#4b5563; }
+.theme-dark .icon-btn:hover{ background: rgba(76,141,255,.12); }
+.theme-dark .menu-item:hover{ background: rgba(76,141,255,.12); }
+
+/* ===== Badges (nếu dùng) ===== */
+.badge{
+  font-size:.75rem; border-radius: 8px; padding:.15rem .45rem;
+  border:1px solid transparent; display:inline-block;
+}
+.badge.paid   { background:#e6ffed; color:#0a8f3a; border-color:#bdf1c9; }
+.badge.unpaid { background:#fff2f0; color:#c53d2f; border-color:#ffd0c8; }
+.theme-dark .badge.paid   { background:#0b2f1a; color:#8af0b3; border-color:#14532d; }
+.theme-dark .badge.unpaid { background:#3a0b0b; color:#ffb4a8; border-color:#7f1d1d; }
+
+/* nếu có file CSS chung */
+[aria-busy="true"]{ opacity:.7; pointer-events:none; }
+/* Bảng: dùng separate để kiểm soát viền theo ô */
+.table{
+  width:100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Header sticky đứng trên body hẳn */
+.table thead th{
+  position: sticky;
+  top: 0;
+  z-index: 3;                /* cao hơn tbody */
+  background: var(--thead-bg);
+}
+
+/* Kẻ đường chân cho header (che viền body phía dưới) */
+.table thead th::after{
+  content:"";
+  position:absolute;
+  left:0; right:0; bottom:-1px;
+  height:1px;
+  background: var(--border);
+}
+
+/* Viền dọc bên trong bảng – đồng bộ giữa thead & tbody */
+.table thead th + th,
+.table tbody td + td{
+  border-left: 1px solid var(--border);
+}
+
+/* Viền ngang cho body; KHÔNG kẻ thêm viền dọc ở body nữa */
+.table tbody td{
+  border-bottom: 1px solid var(--border);
+}
+
+/* Giữ vùng cuộn đúng chuẩn, tránh “vỡ” sticky header */
+.table-wrap{
+  overflow: auto;            /* đừng để visible */
+}
