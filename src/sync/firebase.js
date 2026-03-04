@@ -14,14 +14,14 @@ import {
 let _app = null;
 let _db  = null;
 
-// === Cấu hình của bạn (giữ nguyên) ===
+// === Cấu hình Firebase từ biến môi trường (.env) ===
 const FBCONFIG = {
-  apiKey: "AIzaSyC49uNbhByEmTH7XS3UOfxVGeV-mz3sbWo",
-  authDomain: "dien-nuoc-app.firebaseapp.com",
-  projectId: "dien-nuoc-app",
-  storageBucket: "dien-nuoc-app.firebasestorage.app",
-  messagingSenderId: "841169011015",
-  appId: "1:841169011015:web:a9a1faeb9323bfe5a64c62",
+  apiKey:            import.meta.env.VITE_FB_API_KEY,
+  authDomain:        import.meta.env.VITE_FB_AUTH_DOMAIN,
+  projectId:         import.meta.env.VITE_FB_PROJECT_ID,
+  storageBucket:     import.meta.env.VITE_FB_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FB_MESSAGING_SENDER_ID,
+  appId:             import.meta.env.VITE_FB_APP_ID,
 };
 
 export function initFirebase() {
