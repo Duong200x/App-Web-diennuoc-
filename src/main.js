@@ -128,7 +128,8 @@ window.addEventListener("DOMContentLoaded", () => {
     pending = true;
     requestAnimationFrame(() => {
       try { recomputePrevDebtFromHistory(); } catch {}
-      startRouter(app);
+      // Thay vì startRouter(app), ta dispatch event để router hiện tại tự render lại
+      window.dispatchEvent(new CustomEvent("app:force-render"));
       pending = false;
     });
   };
@@ -136,7 +137,9 @@ window.addEventListener("DOMContentLoaded", () => {
   // Start
   rolloverMonth();
   try { recomputePrevDebtFromHistory(); } catch {}
-  window.__forceRender();
+  
+  // Chỉ gọi startRouter MỘT LẦN DUY NHẤT
+  startRouter(app);
 
   // Firebase realtime
   initFirebase();
@@ -170,12 +173,19 @@ window.addEventListener("DOMContentLoaded", () => {
   const menuBtn = document.getElementById("menu-toggle");
   const menuPanel = document.getElementById("side-menu");
   if (menuBtn && menuPanel) {
-    const closeMenu = () => { menuPanel.setAttribute("hidden", ""); document.removeEventListener("click", onDoc); };
+    const closeMenu = () => { 
+      menuPanel.setAttribute("hidden", ""); 
+      document.removeEventListener("click", onDoc);
+      menuBtn.blur(); // Tránh bị "gray out" do focus
+    };
     const onDoc = (e) => { if (!menuPanel.contains(e.target) && e.target !== menuBtn) closeMenu(); };
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (menuPanel.hasAttribute("hidden")) {
         menuPanel.removeAttribute("hidden");
+        // Update topbar height just in case
+        const tb = document.querySelector(".topbar");
+        if (tb) document.documentElement.style.setProperty("--topbar-h", tb.getBoundingClientRect().height + "px");
         setTimeout(() => document.addEventListener("click", onDoc), 0);
       } else { closeMenu(); }
     });

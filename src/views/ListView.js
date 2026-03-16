@@ -180,16 +180,29 @@ function ensureSumStackStyles() {
       padding:12px 14px; border-radius:14px;
       background: rgba(148,163,184,.08);
       border: 1px solid rgba(148,163,184,.22);
+      flex: 1;
     }
     .sum-label{ font-size:14px; opacity:.9; }
     .sum-value{
       font-weight:800; font-variant-numeric: tabular-nums; letter-spacing:.3px;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-      font-size: clamp(22px, 7vw, 36px); line-height: 1.1;
+      font-size: clamp(20px, 5vw, 28px); line-height: 1.1;
     }
     .sum-row.total .sum-label{ font-weight:700; }
-    .sum-row.total .sum-value{ font-size: clamp(24px, 8vw, 40px); }
-    @media (min-width: 768px){ .sum-row{ padding:14px 16px; } }
+    .sum-row.total .sum-value{ font-size: clamp(22px, 6vw, 32px); color: var(--primary); }
+    
+    @media (min-width: 768px){ 
+      .sumstack { flex-direction: row; flex-wrap: wrap; }
+      .sum-row { padding: 14px 16px; min-width: 200px; flex-direction: column; align-items: flex-start; gap: 4px; }
+      .sum-value { font-size: 26px; }
+      .sum-row.total .sum-value { font-size: 30px; }
+    }
+    /* Mini switch for debt toggle */
+    .switch.mini { height: 20px; width: 34px; padding: 0; }
+    .switch.mini .trk { height: 18px; width: 34px; }
+    .switch.mini .trk:before { content: ""; }
+    .switch.mini .kn { height: 14px; width: 14px; left: 2px; bottom: 2px; }
+    .switch.mini input:checked + .trk .kn { transform: translateX(16px); }
   `;
   const st = document.createElement("style");
   st.id = "sumstack-style";
@@ -271,6 +284,8 @@ export function mount(el) {
   let current = [...all];
   let keyword = "";
   let zoneFilter = "all";
+  let paymentFilter = "all"; // all, paid, unpaid
+  let includeDebt = true;   // mặc định có cộng nợ cũ
 
   const $ = (sel, root = el) => root.querySelector(sel);
 
@@ -310,6 +325,7 @@ export function mount(el) {
 
         <div class="toolbar" style="margin-top:4px; gap:8px;">
           <input id="searchName" class="input" placeholder="Tìm theo tên (gõ không dấu)" style="flex:1; min-width:220px">
+          
           <select id="zoneFilter" class="input" style="width:auto">
             <option value="all">Khu: Tất cả</option>
             <option value="tren">Khu Trên</option>
@@ -318,11 +334,17 @@ export function mount(el) {
             <option value="khac">Khác</option>
           </select>
 
+          <select id="paymentFilter" class="input" style="width:auto">
+            <option value="all">Thanh toán: Tất cả</option>
+            <option value="unpaid">Chưa đóng tiền</option>
+            <option value="paid">Đã đóng tiền</option>
+          </select>
+
           <!-- Toggle nút nổi sao lưu -->
           <label class="switch" id="fabToggleWrap" title="Ẩn/hiện nút nổi Sao lưu/Khôi phục">
             <input type="checkbox" id="fabToggle">
             <span class="trk"><i class="kn"></i></span>
-            <span>Popup sao lưu</span>
+            <span style="font-size:13px; font-weight:500;">Popup sao lưu</span>
           </label>
         </div>
 
@@ -330,8 +352,17 @@ export function mount(el) {
         <div class="sumstack" id="grandSum">
           <div class="sum-row"><div class="sum-label">Tiền điện tổng</div><div class="sum-value" id="sumElec">0</div></div>
           <div class="sum-row"><div class="sum-label">Tiền nước tổng</div><div class="sum-value" id="sumWater">0</div></div>
-          <div class="sum-row"><div class="sum-label">Nợ cũ tổng</div><div class="sum-value" id="sumDebt">0</div></div>
-          <div class="sum-row total"><div class="sum-label">Tổng cộng</div><div class="sum-value" id="sumAll">0</div></div>
+          <div class="sum-row" id="debtSumRow"><div class="sum-label">Nợ cũ tổng</div><div class="sum-value" id="sumDebt">0</div></div>
+          <div class="sum-row total">
+            <div class="sum-label" style="display:flex; align-items:center; gap:8px;">
+               <span>Tổng cộng</span>
+               <label class="switch mini" title="Bật: cộng nợ cũ | Tắt: chỉ tính tháng này">
+                 <input type="checkbox" id="debtToggle" checked>
+                 <span class="trk"><i class="kn"></i></span>
+               </label>
+            </div>
+            <div class="sum-value" id="sumAll">0</div>
+          </div>
         </div>
 
         <!-- ======= THEO KHU ======= -->
@@ -396,7 +427,13 @@ export function mount(el) {
         acc.elec += elecMoney || 0;
         acc.water += waterMoney || 0;
         acc.debt += Number(prevDebt || 0);
-        acc.totalRounded += roundK(total || 0);
+
+        // Logic cộng tổng tùy thuộc vào toggle nợ cũ
+        if (includeDebt) {
+          acc.totalRounded += roundK(total || 0);
+        } else {
+          acc.totalRounded += roundK((elecMoney || 0) + (waterMoney || 0));
+        }
         return acc;
       },
       { elec: 0, water: 0, debt: 0, totalRounded: 0 }
@@ -422,6 +459,9 @@ export function mount(el) {
     sumWaterEl.textContent = money(s.water);
     sumDebtEl.textContent  = money(s.debt);
     sumAllEl.textContent   = money(s.totalRounded);
+    
+    // Mờ dòng Nợ cũ tổng nếu đang tắt toggle cộng nợ
+    $("#debtSumRow").style.opacity = includeDebt ? "1" : "0.35";
   };
 
   const renderZoneTotals = (rows) => {
@@ -705,12 +745,23 @@ export function mount(el) {
   };
 
   const applyFilter = () => {
-    const q = norm(keyword);
-    return all.filter((r) => {
-      const byName = q ? norm(r.name).includes(q) : true;
-      const byZone = zoneFilter === "all" ? true : (smartZoneOf(r) === zoneFilter);
-      return byName && byZone;
+    let res = all.filter((it) => {
+      // 1. Tìm theo tên
+      const matchesName = keyword ? norm(it.name).includes(norm(keyword)) : true;
+      if (!matchesName) return false;
+
+      // 2. Theo khu
+      const zSmart = smartZoneOf(it);
+      const matchesZone = (zoneFilter === "all") || (zSmart === zoneFilter);
+      if (!matchesZone) return false;
+
+      // 3. Theo thanh toán
+      if (paymentFilter === "paid") return it.paid === true;
+      if (paymentFilter === "unpaid") return it.paid !== true;
+
+      return true;
     });
+    return res;
   };
 
   // render đầu tiên
@@ -738,7 +789,7 @@ export function mount(el) {
   })();
 
   // search
-  document.getElementById("searchName").addEventListener("input", (e) => {
+  $("#searchName").addEventListener("input", (e) => {
     keyword = e.target.value;
     current = applyFilter();
     renderRows(current);
@@ -746,10 +797,24 @@ export function mount(el) {
   });
 
   // zone filter
-  const zSel = document.getElementById("zoneFilter");
-  zSel.addEventListener("change", () => {
-    zoneFilter = zSel.value || "all";
+  $("#zoneFilter").addEventListener("change", (e) => {
+    zoneFilter = e.target.value;
     current = applyFilter();
+    renderRows(current);
+    rememberListUIState(el);
+  });
+
+  // payment filter
+  $("#paymentFilter").addEventListener("change", (e) => {
+    paymentFilter = e.target.value;
+    current = applyFilter();
+    renderRows(current);
+    rememberListUIState(el);
+  });
+
+  // debt toggle
+  $("#debtToggle").addEventListener("change", (e) => {
+    includeDebt = e.target.checked;
     renderRows(current);
     rememberListUIState(el);
   });

@@ -36,11 +36,12 @@ export function startRouter(appEl) {
       const inner = document.createElement("div");
       inner.id = "route-overlay-content";
       ov.appendChild(inner);
-      document.body.appendChild(ov);      // fixed theo viewport
+      document.body.appendChild(ov);
     }
-    // căn phần top đúng bằng chiều cao topbar hiện tại
     const t = topbarHeight();
-    ov.style.top = t + "px";
+    ov.style.paddingTop = t + "px";
+    // Force update CSS variable for side-menu positioning
+    document.documentElement.style.setProperty("--topbar-h", t + "px");
     return ov;
   }
 
@@ -105,15 +106,20 @@ export function startRouter(appEl) {
 
   const render = () => requestAnimationFrame(_render);
 
-  window.addEventListener("hashchange", render, { passive: true });
-  window.addEventListener("load", render);
-  window.addEventListener("resize", () => {
-    // nếu đổi kích thước làm topbar cao thấp khác → cập nhật overlay.top
-    const ov = document.getElementById("route-overlay");
-    if (ov && !ov.hasAttribute("hidden")) {
-      ov.style.top = topbarHeight() + "px";
-    }
-  });
+  // Chỉ gắn listener nếu chưa có (tránh duplicate khi hot reload hoặc gọi nhầm)
+  if (!window.__ROUTER_INIT__) {
+    window.addEventListener("hashchange", render, { passive: true });
+    window.addEventListener("load", render);
+    window.addEventListener("resize", () => {
+      const ov = document.getElementById("route-overlay");
+      if (ov && !ov.hasAttribute("hidden")) {
+        ov.style.top = topbarHeight() + "px";
+      }
+    });
+    // Lắng nghe event force-render từ main.js
+    window.addEventListener("app:force-render", render);
+    window.__ROUTER_INIT__ = true;
+  }
 
   render();
 }

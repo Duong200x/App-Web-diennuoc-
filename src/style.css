@@ -17,7 +17,10 @@
   --safe-right: env(safe-area-inset-right, 0px);
 
   /* sẽ được router cập nhật đúng mỗi lần render */
-  --topbar-h: 56px;
+  --topbar-h: 60px;
+  --z-overlay: 200;
+  --z-menu: 400;     /* Cao nhất để không bị gì đè */
+  --z-topbar: 300;
 }
 html,body,#app{height:100%;}
 html{ -webkit-text-size-adjust:100%; }
@@ -33,14 +36,15 @@ body{
 #app { position: relative; } /* để overlay bám theo app, không che topbar */
 
 .topbar{
-  position: sticky; top:0; z-index:150;   /* luôn nổi trên overlay */
+  position: sticky; top:0; z-index: var(--z-topbar);
   display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding: calc(14px + var(--safe-top)) calc(18px + var(--safe-right)) 14px calc(18px + var(--safe-left));
+  padding: calc(14px + var(--safe-top)) calc(18px + var(--safe-right)) 13px calc(18px + var(--safe-left));
   background:var(--card); border-bottom:1px solid var(--border);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
 }
-.app-title{margin:0; font-size:20px; font-weight:700;}
-.app-title a{ color: var(--primary); text-decoration: none; }
+.app-title{margin:0; font-size:20px; font-weight:700; line-height:1;}
+.app-title a{ color: var(--primary); text-decoration: none; display: block; }
 
 .container{
   width:100%; max-width: var(--page-max);
@@ -73,6 +77,8 @@ h2{ margin: 0 0 12px; font-size: 20px; }
   background: var(--card); color: var(--text); cursor:pointer; user-select:none;
 }
 .icon-btn:hover{ background: rgba(13,110,253,.08); }
+.icon-btn:active{ background: rgba(13,110,253,.15); transform: scale(0.95); }
+.icon-btn:focus{ outline: none; border-color: var(--primary); }
 
 /* ===== Buttons ===== */
 .btn{
@@ -81,12 +87,14 @@ h2{ margin: 0 0 12px; font-size: 20px; }
   background: var(--primary); color:#fff; user-select:none;
 }
 .btn:hover{ background: var(--primary-700); }
+.btn:active{ transform: scale(0.96); opacity: 0.9; }
 .btn.secondary{ background:#6c757d; color:#fff; }
 .btn.secondary:hover{ background:#555e64; }
 .btn.ghost{
   background: transparent; color: var(--primary); border: 1px solid var(--primary);
 }
 .btn.ghost:hover{ background: rgba(13,110,253,.08); }
+.btn.ghost:active{ background: rgba(13,110,253,.15); }
 .btn[disabled], .btn:disabled{ opacity:.55; cursor:not-allowed; pointer-events:none; }
 
 /* ===== Inputs & forms ===== */
@@ -157,15 +165,17 @@ h2{ margin: 0 0 12px; font-size: 20px; }
 /* ===== Hamburger menu panel ===== */
 .menu-panel{
   position: fixed;
-  top: calc(var(--topbar-h) + 8px);
+  top: calc(var(--topbar-h) + 10px);
   right: 12px;
   background: var(--card); color: var(--text);
   border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
   display: flex; flex-direction: column; min-width: 210px;
   padding: 8px;
-  z-index: 200;               /* cao hơn overlay để click được */
+  z-index: var(--z-menu);
   pointer-events: auto;
+  /* Chống bị cắt bởi các thành phần khác */
+  overflow: visible;
 }
 .menu-panel[hidden]{ display:none !important; }
 .menu-item{
@@ -205,21 +215,29 @@ h2{ margin: 0 0 12px; font-size: 20px; }
 #route-overlay{
   position: fixed;
   left: 0; right: 0; bottom: 0;
-  top: var(--topbar-h);            /* JS set đúng với chiều cao thật của .topbar */
-  z-index: 100;                    /* dưới topbar, trên nền */
+  top: 0;
+  z-index: var(--z-overlay);
   background: var(--bg);
-  overflow: auto;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: var(--safe-bottom);
 }
 #route-overlay-content{ min-height: 100%; }
 
 /* ===== Mobile tweaks ===== */
 @media (max-width: 768px){
-  .container{ max-width:100%; margin: 12px auto; padding: 0 12px; }
+  .container{ max-width:100%; margin: 8px auto; padding: 0 8px; }
   h2{ font-size: 18px; }
-  .btn{ padding: 10px 12px; font-size: 15px; }
-  .table{ min-width: 760px; }
+  .btn{ padding: 10px 10px; font-size: 14px; }
+  .table{ min-width: 800px; } /* Đảm bảo bảng có không gian ngang khi cuộn */
+  
+  /* Cải thiện hiển thị sumbar trên mobile */
+  .sumbar { grid-template-columns: 1fr; gap: 8px; }
+  
+  /* Nới lỏng bảng để dễ cuộn */
+  .table-wrap {
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
 }
 
 /* ===== Large screen polish ===== */
