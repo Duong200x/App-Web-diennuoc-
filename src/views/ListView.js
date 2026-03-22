@@ -6,6 +6,7 @@ import {
 import { money } from "../utils/format.js";
 import { exportExcel } from "../export/excel.js";
 import { exportWordAllDocx } from "../export/wordDocx.js";
+import { showToast } from "../ui/toast.js";
 import { monthYearLabel } from "../utils/date.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
 import { importResidentsFromXlsxToCurrent } from "../state/importResidents.js";
@@ -565,7 +566,7 @@ export function mount(el) {
           current = applyFilter();
           renderRows(current);
         } catch (e) {
-          alert("Lỗi cập nhật trạng thái thanh toán: " + (e?.message || e));
+          showToast("Lỗi cập nhật trạng thái thanh toán: " + (e?.message || e), "error");
           cb.checked = !cb.checked;
         }
       });
@@ -587,12 +588,12 @@ export function mount(el) {
         const it = listResidents()[oid];
         const a = computeAmounts(it);
         const remaining = a.remaining;
-        if (remaining <= 0) { alert("Không còn số tiền cần tạm ứng."); return; }
+        if (remaining <= 0) { showToast("Không còn số tiền cần tạm ứng.", "info"); return; }
 
         const raw = prompt(`Nhập số tiền thu tạm ứng (Còn thiếu hiện tại: ${money(remaining)}):`, "");
         if (raw == null) return;
         const amount = Number(String(raw).replace(/[^\d]/g, "")) || 0;
-        if (amount <= 0) { alert("Số tiền không hợp lệ."); return; }
+        if (amount <= 0) { showToast("Số tiền không hợp lệ.", "error"); return; }
 
         try {
           await addAdvance(oid, amount);
@@ -601,7 +602,7 @@ export function mount(el) {
           current = applyFilter();
           renderRows(current);
         } catch (err) {
-          alert(err?.message || err);
+          showToast(err?.message || err, "error");
         }
       });
     });
@@ -628,7 +629,7 @@ export function mount(el) {
           current = applyFilter();
           renderRows(current);
         } catch (err) {
-          alert(err?.message || err);
+          showToast(err?.message || err, "error");
         }
       });
     });
@@ -735,7 +736,7 @@ export function mount(el) {
             current = applyFilter();
             renderRows(current);
           } catch (err) {
-            alert(err.message || err);
+            showToast(err.message || err, "error");
           }
         });
       });
@@ -831,13 +832,13 @@ export function mount(el) {
     if (!ok) return;
     try {
       const r = forceCarryOverToCurrentMonth();
-      alert(`Đã lưu ${r.rows} dòng vào lịch sử ${r.savedMonth} và reset tháng ${r.currentMonth}`);
+      showToast(`Đã lưu ${r.rows} dòng vào lịch sử ${r.savedMonth} và reset tháng ${r.currentMonth}`, "success");
       if (isInRoom()) for (const it of listResidents()) await pushOneResident(it);
       all = listResidents();
       current = applyFilter();
       renderRows(current);
     } catch (e) {
-      alert("Lỗi sửa tháng: " + (e?.message || e));
+      showToast("Lỗi sửa tháng: " + (e?.message || e), "error");
     }
   });
 
@@ -850,13 +851,13 @@ export function mount(el) {
     if (!f) return;
     try {
       const res = await importResidentsFromXlsxToCurrent(f);
-      alert(`Đã nhập: ${res.total} cư dân\n- Mới: ${res.added}\n- Cập nhật: ${res.updated}`);
+      showToast(`Đã nhập: ${res.total} cư dân\n- Mới: ${res.added}\n- Cập nhật: ${res.updated}`, "success");
       if (isInRoom()) for (const it of listResidents()) await pushOneResident(it);
       all = listResidents();
       current = applyFilter();
       renderRows(current);
     } catch (err) {
-      alert("Lỗi nhập danh sách: " + (err.message || err));
+      showToast("Lỗi nhập danh sách: " + (err.message || err), "error");
     } finally {
       inpImp.value = "";
     }

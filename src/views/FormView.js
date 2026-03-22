@@ -1,8 +1,10 @@
 // src/views/FormView.js
 import { addResident, listResidents } from "../state/readings.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
+import { showToast } from "../ui/toast.js";
 import { ZONES, zoneLabel } from "../state/zones.js";
 import { isInRoom, pushOneResident } from "../sync/room.js";
+import { ensureAuth } from "../sync/firebase.js";
 
 function goBackOneStepOrList() {
   if (sessionStorage.getItem("list.ui") && window.history.length > 1) {
@@ -83,12 +85,18 @@ export function mount(el) {
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const name = el.querySelector("#name").value.trim();
-    if (!name) { alert("Vui lòng nhập tên."); el.querySelector("#name").focus(); return; }
+    if (!name) { showToast("Vui lòng nhập tên.", "error"); el.querySelector("#name").focus(); return; }
 
     const zone = zoneSel.value;
     const address = zone === "khac" ? (addrInp.value || "").trim() : "";
     const startElec = Number(e0.value || 0);
     const startWater = Number(w0.value || 0);
+
+    if (isInRoom()) {
+      try { await ensureAuth(); } catch (err) {
+        showToast("Cần đăng nhập để đồng bộ trực tuyến.", "error"); return;
+      }
+    }
 
     try {
       addResident({ name, zone, address, startElec, startWater });
@@ -97,12 +105,15 @@ export function mount(el) {
       if (isInRoom()) {
         const all = listResidents();
         const newIt = all[all.length - 1];
-        try { await pushOneResident(newIt); } catch (e) { console.warn("pushOneResident:", e); }
+        try { await pushOneResident(newIt); } catch (e) {
+             showToast("Lỗi đồng bộ: " + (e?.message || e), "error");
+             console.warn("pushOneResident:", e);
+        }
       }
 
       goBackOneStepOrList();
     } catch (e) {
-      alert("Thêm cư dân thất bại: " + (e?.message || e));
+      showToast("Thêm cư dân thất bại: " + (e?.message || e), "error");
     }
   });
 

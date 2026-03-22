@@ -1,5 +1,7 @@
 // src/views/ConfigView.js
 import { getRates, setRates } from "../state/rates.js";
+import { initFirebase, getDb } from "../sync/firebase.js";
+import { showToast } from "../ui/toast.js";
 import {
   downloadBackup,
   restoreFromJsonText,
@@ -77,7 +79,7 @@ export function mount(el) {
       Number(el.querySelector("#e").value),
       Number(el.querySelector("#w").value)
     );
-    alert("Đã lưu giá.");
+    showToast("Đã lưu giá.", "success");
   });
 
   // Sao lưu ra file .json (tải xuống / share)
@@ -88,10 +90,10 @@ export function mount(el) {
   bkLocalBtn.addEventListener("click", () => {
     try {
       const { key } = saveBackupLocal(3); // ⬅ chỉ giữ 3 bản
-      alert("Đã sao lưu cục bộ: " + key);
+      showToast("Đã sao lưu cục bộ: " + key, "success");
       renderLocalListHint();
     } catch (e) {
-      alert("Không thể sao lưu cục bộ: " + (e?.message || e));
+      showToast("Không thể sao lưu cục bộ: " + (e?.message || e), "error");
     }
   });
 
@@ -120,11 +122,11 @@ export function mount(el) {
     try {
       const text = await file.text();
       await restoreFromJsonText(text);
-      alert("Phục hồi thành công. Ứng dụng sẽ tải lại.");
+      showToast("Phục hồi thành công. Ứng dụng sẽ tải lại.", "success");
       location.hash = "#/list";
-      location.reload();
+      setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-      alert("Lỗi phục hồi: " + (err.message || err));
+      showToast("Lỗi phục hồi: " + (err.message || err), "error");
     } finally {
       fileInput.value = "";
     }
@@ -135,13 +137,13 @@ export function mount(el) {
   quickBtn.addEventListener("click", async () => {
     try {
       const snap = readLatestBackupLocal();
-      if (!snap) { alert("Không tìm thấy bản sao lưu cục bộ mới nhất."); return; }
+      if (!snap) { showToast("Không tìm thấy bản sao lưu cục bộ mới nhất.", "error"); return; }
       await restoreFromJsonText(JSON.stringify(snap));
-      alert("Đã phục hồi từ bản sao lưu cục bộ mới nhất. Ứng dụng sẽ tải lại.");
+      showToast("Đã phục hồi từ bản sao lưu cục bộ mới nhất. Ứng dụng sẽ tải lại.", "success");
       location.hash = "#/list";
-      location.reload();
+      setTimeout(() => window.location.reload(), 1500);
     } catch (e) {
-      alert("Khôi phục nhanh thất bại: " + (e?.message || e));
+      showToast("Khôi phục nhanh thất bại: " + (e?.message || e), "error");
     }
   });
 
@@ -149,9 +151,9 @@ export function mount(el) {
   el.querySelector("#clearBtn").addEventListener("click", () => {
     if (confirm("Xóa toàn bộ dữ liệu ứng dụng? (không thể hoàn tác)")) {
       clearAllData();
-      alert("Đã xóa. Ứng dụng sẽ tải lại.");
+      showToast("Đã xóa. Ứng dụng sẽ tải lại.", "success");
       location.hash = "#/list";
-      location.reload();
+      setTimeout(() => window.location.reload(), 1000);
     }
   });
 }

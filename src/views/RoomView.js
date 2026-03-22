@@ -9,6 +9,8 @@ import {
   pushMonthPtr,
 } from "../sync/room.js";
 import { showLoading } from "../ui/busy.js";
+import { showToast } from "../ui/toast.js";
+import { ensureAuth } from "../sync/firebase.js";
 
 /* ========= helpers ========= */
 function throttle(fn, ms = 300) {
@@ -112,6 +114,9 @@ export function mount(el) {
   // ====== Tạo phòng ======
   btnCreate.addEventListener("click", async () => {
     const out = $("#createOut");
+    try { await ensureAuth(); } catch (err) {
+      showToast("Cần đăng nhập để tạo phòng.", "error"); return;
+    }
     setBusy(true);
     out.textContent = "";
     const hide = showLoading("Đang tạo phòng...");
@@ -119,16 +124,16 @@ export function mount(el) {
       const id = await createRoom(); // (giữ logic gốc: đã push residents+history+month)
       if (id) {
         enterRoom(id, onRemote);
-        out.textContent = "Đã tạo phòng: " + id + " (chia sẻ mã này cho người khác)";
+        showToast("Đã tạo phòng: " + id, "success");
         statusRid.textContent = id;
         joinCode.value = id;
         btnPush.disabled = false;
         onRemote();
       } else {
-        out.textContent = "Tạo phòng thất bại. Vui lòng kiểm tra mạng/Firebase.";
+        showToast("Tạo phòng thất bại.", "error");
       }
     } catch (e) {
-      out.textContent = "Lỗi tạo phòng: " + (e?.message || e);
+      showToast("Lỗi tạo phòng: " + (e?.message || e), "error");
     } finally {
       hide();
       setBusy(false);
@@ -146,12 +151,12 @@ export function mount(el) {
     const hide = showLoading("Đang tham gia phòng...");
     try {
       enterRoom(code, onRemote); // bật realtime, dữ liệu đổ về tự động
-      out.textContent = `Đã tham gia phòng ${code}. Dữ liệu sẽ tự đồng bộ.`;
+      showToast(`Đã tham gia phòng ${code}.`, "success");
       statusRid.textContent = code;
       btnPush.disabled = false;
       onRemote();
     } catch (e) {
-      out.textContent = "Lỗi tham gia: " + (e?.message || e);
+      showToast("Lỗi tham gia: " + (e?.message || e), "error");
     } finally {
       hide();
       setBusy(false);
@@ -163,7 +168,7 @@ export function mount(el) {
   // ====== Rời phòng ======
   btnLeave.addEventListener("click", () => {
     leaveRoom();
-    $("#joinOut").textContent = "Đã rời phòng.";
+    showToast("Đã rời phòng.", "info");
     statusRid.textContent = "(chưa tham gia)";
     btnPush.disabled = true;
     onRemote();
@@ -173,6 +178,9 @@ export function mount(el) {
   btnPush.addEventListener("click", async () => {
     const out = $("#joinOut");
     if (!getRoomId()) { out.textContent = "Bạn chưa ở trong phòng."; return; }
+    try { await ensureAuth(); } catch (err) {
+      showToast("Cần đăng nhập để đẩy dữ liệu.", "error"); return;
+    }
     setBusy(true);
     const hide = showLoading("Đang đẩy dữ liệu lên phòng...");
 
@@ -187,9 +195,9 @@ export function mount(el) {
       await nextFrame();
       await pushMonthPtr();
 
-      out.textContent = "Đã đẩy toàn bộ (danh sách + lịch sử + tháng) lên phòng.";
+      showToast("Đã đẩy toàn bộ dữ liệu lên phòng thành công.", "success");
     } catch (e) {
-      out.textContent = "Lỗi: " + (e?.message || e);
+      showToast("Lỗi đẩy dữ liệu: " + (e?.message || e), "error");
     } finally {
       hide();
       setBusy(false);

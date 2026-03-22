@@ -11,9 +11,11 @@ import {
 } from "../state/readings.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
 import { ZONES, zoneLabel } from "../state/zones.js";
-import { isInRoom, pushOneResident, pushDeleteResident } from "../sync/room.js";
+import { isInRoom, pushOneResident, pushDeleteResident, fdbAsync } from "../sync/room.js";
+import { ensureAuth } from "../sync/firebase.js";
 import { showLoading } from "../ui/busy.js";
 import { money } from "../utils/format.js";
+import { residentKey } from "../utils/normalize.js";
 
 /* Lùi 1 bước nếu có trạng thái list, fallback về #/list */
 function goBackOneStepOrList() {
@@ -223,6 +225,13 @@ export function mount(el, idx) {
   const form = el.querySelector("#manage");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (isInRoom()) {
+      try { await ensureAuth(); } catch (err) {
+        showToast("Cần đăng nhập để đồng bộ trực tuyến.", "error");
+        return;
+      }
+    }
+
     const hide = showLoading("Đang lưu...");
     rememberUIState(el);
 
@@ -250,6 +259,9 @@ export function mount(el, idx) {
         advance = Math.max(0, advance);
       }
 
+      const currentOldIt = listResidents()[idx];
+      const oldKey = residentKey(currentOldIt);
+
       await updateFullAdmin(idx, {
         name, zone, address,
         oldElec, oldWater, newElec, newWater,
@@ -258,16 +270,34 @@ export function mount(el, idx) {
 
       if (isInRoom()) {
         const fresh = listResidents()[idx];
-        try { await pushOneResident(fresh); } catch (err) { console.warn("pushOneResident:", err); }
+        const newKey = residentKey(fresh);
+        if (oldKey !== newKey) {
+          try { 
+            await pushDeleteResident(currentOldIt); 
+            // Gỡ triệt để khỏi local ngay để onSnapshot không lôi lại
+            const cleanList = listResidents().filter(r => residentKey(r) !== oldKey);
+            setJSON(KEYS.current, cleanList);
+          } catch (e) { 
+            showToast("Lỗi gỡ tên cũ: " + (e?.message || e), "error");
+            console.warn(e); 
+          }
+        }
+        try { 
+          await pushOneResident(fresh); 
+          showToast("Đã cập nhật và đồng bộ.", "success");
+        } catch (err) { 
+          showToast("Lỗi đồng bộ mới: " + (err?.message || err), "error");
+          console.warn("pushOneResident:", err); 
+        }
+      } else {
+        showToast("Đã lưu thay đổi cục bộ.", "success");
       }
-
-      alert("Đã lưu.");
       // Ở lại trang để tiếp tục chỉnh: render lại và khôi phục focus
       // Nếu bạn muốn quay về danh sách, thay bằng: goBackOneStepOrList();
       refreshPreview(el, listResidents()[idx]);
       restoreUIState(el);
     } catch (err) {
-      alert(err?.message || err);
+      showToast(err?.message || err, "error");
     } finally {
       hide();
     }
@@ -279,6 +309,13 @@ export function mount(el, idx) {
   btnDel.addEventListener("click", async () => {
     if (deleting) return;
     if (!confirm("Xóa cư dân này?")) return;
+
+    if (isInRoom()) {
+      try { await ensureAuth(); } catch (err) {
+        showToast("Cần đăng nhập để thực hiện xoá trực tuyến.", "error");
+        return;
+      }
+    }
 
     deleting = true;
     btnDel.disabled = true;
@@ -293,10 +330,10 @@ export function mount(el, idx) {
         await pushDeleteResident(residentBeforeDelete);
       }
 
-      alert("Đã xóa cư dân.");
+      showToast("Đã xóa cư dân.", "success");
       goBackOneStepOrList();
     } catch (e) {
-      alert("Xóa thất bại: " + (e?.message || e));
+      showToast("Xóa thất bại: " + (e?.message || e), "error");
       btnDel.disabled = false;
       deleting = false;
     } finally {

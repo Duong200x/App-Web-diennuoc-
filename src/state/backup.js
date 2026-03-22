@@ -56,7 +56,7 @@ export async function restoreFromJsonText(text) {
   if ("template" in obj) localStorage.setItem(KEYS.tpl, obj.template || "");
   if ("due" in obj) localStorage.setItem(KEYS.due, obj.due || "");
   if ("contact" in obj) localStorage.setItem(KEYS.contact, obj.contact || "");
-  if ("roomId" in obj) localStorage.setItem(KEYS.roomId, obj.roomId || "");
+  // if ("roomId" in obj) localStorage.setItem(KEYS.roomId, obj.roomId || "");
 }
 
 export function clearAllData() {

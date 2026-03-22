@@ -3,6 +3,7 @@
 // Giữ API cũ: initFirebase() và getDb()
 
 import { initializeApp, getApps } from "firebase/app";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
 import {
   getFirestore,
   initializeFirestore,
@@ -69,3 +70,55 @@ export function initFirebase() {
 export function getDb() {
   return _db;
 }
+
+let _authPromise = null;
+
+export function ensureAuth() {
+  // Bắt buộc gọi sau khi initFirebase()
+  if (!_app) return Promise.reject(new Error("Firebase hasn't been initialized"));
+
+  const auth = getAuth(_app);
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+
+  if (!_authPromise) {
+    _authPromise = new Promise((resolve, reject) => {
+      // Thiết lập timeout 20s cho việc đăng nhập
+      const timeout = setTimeout(() => {
+        _authPromise = null;
+        reject(new Error("Hết thời gian chờ đăng nhập (Timeout)."));
+      }, 20000);
+
+      const unsub = onAuthStateChanged(auth, async (user) => {
+        clearTimeout(timeout);
+        unsub(); 
+        
+        if (user) {
+          resolve(user);
+        } else {
+          // Chỉ hiện prompt nếu thực sự chưa có user
+          // Sử dụng setTimeout để không block main thread ngay lập tức
+          setTimeout(async () => {
+            const pwd = prompt("Bảo mật hệ thống đồng bộ (Online Sync)\nVui lòng nhập mật khẩu quản trị:");
+            
+            if (!pwd) {
+              console.warn("[auth] No password provided.");
+              _authPromise = null;
+              resolve(null); // Trả về null để báo hiệu không có quyền Online
+              return;
+            }
+
+            try {
+              const cred = await signInWithEmailAndPassword(auth, "quanly@diennuoc.com", pwd);
+              resolve(cred.user);
+            } catch (e) {
+              _authPromise = null;
+              reject(new Error("Mật khẩu không đúng hoặc lỗi mạng: " + e.message));
+            }
+          }, 50);
+        }
+      });
+    });
+  }
+  return _authPromise;
+}
+

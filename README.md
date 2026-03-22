@@ -59,8 +59,11 @@
 | 📊 **Xuất Excel**          | Xuất bảng tổng hợp `.xlsx` cho tất cả cư dân                                                 |
 | 🖨️ **In Bluetooth**        | In phiếu thu qua máy in nhiệt ESC/POS kết nối Bluetooth                                      |
 | 📱 **QR Code**             | Quét / tạo mã QR để chia sẻ thông tin nhanh                                                  |
-| 🔄 **Đồng bộ Firebase**    | Real-time sync qua Firestore – nhiều thiết bị cùng dùng chung dữ liệu                        |
+| 🔄 **Đồng bộ Firebase**    | Real-time sync qua Firestore – bảo mật bằng **Firebase Auth** (Mật khẩu Quản trị)       |
 | 👥 **Phòng cộng tác**      | Tạo / tham gia phòng để nhiều người quản lý cùng lúc                                         |
+| 🔍 **Bộ lọc thanh toán**   | Lọc danh sách theo trạng thái: Tất cả / Đã đóng / Chưa đóng (Tháng hiện tại)                 |
+| ⚖️ **Cần gạt nợ cũ**       | Tùy chọn cộng hoặc loại bỏ nợ cũ vào tổng tiền thanh toán ngay trên giao diện                |
+| 🔔 **Thông báo Toast**     | Hệ thống thông báo trượt mượt mà, thay thế các hộp thoại alert() gây gián đoạn               |
 | 🌙 **Dark / Light mode**   | Chuyển giao diện sáng / tối, đồng bộ StatusBar trên Android                                  |
 | 📶 **Offline-first (PWA)** | Service Worker cache – hoạt động ngay cả khi mất mạng                                        |
 | 💾 **Backup / Restore**    | Sao lưu & khôi phục dữ liệu (import từ Excel)                                                |
@@ -150,7 +153,8 @@ dien-nuoc-app/
 │   │
 │   └── ui/                    # UI components dùng chung
 │       ├── syncIndicator.js   # Hiển thị trạng thái đồng bộ
-│       └── backupFab.js       # Nút floating backup
+│       ├── backupFab.js       # Nút floating backup
+│       └── toast.js           # Hệ thống thông báo Toast (NEW)
 │
 └── android/                   # Project Android (Capacitor)
 ```
@@ -237,7 +241,12 @@ Kết nối máy in nhiệt → Chọn **In phiếu** để in trực tiếp qua
 
 ### 7. Đồng bộ nhiều thiết bị
 
-Vào menu **"Phòng"** → Tạo phòng mới hoặc nhập mã phòng → Dữ liệu tự đồng bộ real-time.
+Vào menu **"Phòng"** → Tạo phòng mới hoặc nhập mã phòng. 
+> 🔐 **Bảo mật:** App sẽ yêu cầu nhập **Mật khẩu quản trị** trong lần đầu đồng bộ để bảo vệ dữ liệu trên Firestore.
+
+### 8. Bộ lọc & Tổng tiền
+
+Sử dụng bộ lọc đầu danh sách để tìm người **Chưa đóng tiền**. Sử dụng **cần gạt nợ** trong phần tổng cộng để tùy chỉnh việc cộng dồn nợ cũ vào hóa đơn hiện tại.
 
 ---
 

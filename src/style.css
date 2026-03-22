@@ -80,6 +80,57 @@ h2{ margin: 0 0 12px; font-size: 20px; }
 .icon-btn:active{ background: rgba(13,110,253,.15); transform: scale(0.95); }
 .icon-btn:focus{ outline: none; border-color: var(--primary); }
 
+/* Sync & Backup status */
+.sync-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-muted);
+}
+.sync-status .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ccc; /* offline */
+}
+.sync-status.online .dot { background: var(--primary); }
+.sync-status.syncing .dot { background: #f39c12; animation: blink 1s infinite alternate; }
+
+@keyframes blink { 100% { opacity: 0.3; } }
+
+/* ===============================================================
+TOAST NOTIFICATIONS
+   =============================================================== */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(50px);
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  z-index: 10000;
+  border: 1px solid rgba(255,255,255,0.1);
+  min-width: 200px;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  text-align: center;
+  max-width: 90vw;
+  white-space: pre-wrap; /* For line breaks */
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.toast.success { border-left: 6px solid #10b981; background: #064e3b; color: #ecfdf5; }
+.toast.error   { border-left: 6px solid #ef4444; background: #7f1d1d; color: #fef2f2; }
+.toast.info    { border-left: 6px solid #3b82f6; background: #1e3a8a; color: #eff6ff; }
+
 /* ===== Buttons ===== */
 .btn{
   display:inline-flex; align-items:center; gap:8px; cursor:pointer;
