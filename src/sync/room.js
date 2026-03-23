@@ -425,8 +425,16 @@ export function unsubscribeRoom() {
   if (unsubHistory)   { try { unsubHistory(); }   catch {} unsubHistory = null; }
 }
 
-/** Rời phòng: hủy listener + xóa Room ID (giữ dữ liệu hiện tại) */
+/** Rời phòng: hủy listener + xóa sạch dữ liệu cục bộ (tránh chồng chéo khi vào phòng khác) */
 export function leaveRoom() {
   unsubscribeRoom();
   setStr(KEYS.roomId, "");
+
+  // Clear data
+  setJSON(KEYS.current, []);
+  setJSON(KEYS.history, {});
+  setStr(KEYS.month, "");
+  saveDeletedSet(new Set()); // KEY_DELETED
+  setJSON(KEY_LAST_SYNCED_HISTORY, {});
+  localStorage.removeItem(KEY_HISTORY_TOUCH);
 }
