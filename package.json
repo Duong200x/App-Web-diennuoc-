@@ -1,7 +1,8 @@
 {
   "name": "dien-nuoc-app",
+  "description": "Ung dung quan ly chi so dien nuoc cho ho gia dinh va khu tro, ho tro dong bo Firebase, sao luu va xuat bao cao.",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

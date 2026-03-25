@@ -1,273 +1,251 @@
 <p align="center">
-  <img src="public/icons/6.png" alt="Điện Nước Logo" width="100" />
+  <img src="public/icons/6.png" alt="Logo Điện Nước App" width="96" />
 </p>
 
-<h1 align="center">⚡💧 Quản Lý Ghi Số Điện Nước</h1>
+<h1 align="center">Ứng Dụng Quản Lý Ghi Số Điện Nước</h1>
 
 <p align="center">
-  Ứng dụng ghi chỉ số điện nước, tính tiền tự động, quản lý công nợ và xuất phiếu thu — hỗ trợ cả <b>PWA</b> lẫn <b>Android APK</b>.
+  Ứng dụng web/PWA và Android APK giúp gia đình hoặc chủ trọ ghi chỉ số điện nước, tính tiền, theo dõi công nợ, xuất phiếu thu và sao lưu dữ liệu.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vite-7.x-646CFF?logo=vite&logoColor=white" />
-  <img src="https://img.shields.io/badge/Vanilla_JS-ES2022-F7DF1E?logo=javascript&logoColor=black" />
-  <img src="https://img.shields.io/badge/Capacitor-5.x-119EFF?logo=capacitor&logoColor=white" />
-  <img src="https://img.shields.io/badge/Firebase-Firestore-FFCA28?logo=firebase&logoColor=black" />
-  <img src="https://img.shields.io/badge/PWA-Offline_Ready-5A0FC8?logo=pwa&logoColor=white" />
+  <img src="https://img.shields.io/badge/Vite-7.x-646CFF?logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/JavaScript-ES2022-F7DF1E?logo=javascript&logoColor=black" alt="JavaScript" />
+  <img src="https://img.shields.io/badge/Capacitor-5.x-119EFF?logo=capacitor&logoColor=white" alt="Capacitor" />
+  <img src="https://img.shields.io/badge/Firebase-Firestore-FFCA28?logo=firebase&logoColor=black" alt="Firebase" />
+  <img src="https://img.shields.io/badge/PWA-Offline-5A0FC8?logo=pwa&logoColor=white" alt="PWA" />
 </p>
 
----
+## Giới thiệu
 
-## 📋 Mục Lục
+Đây là dự án mình làm để phục vụ nhu cầu ghi số điện nước trong thực tế, ưu tiên:
 
-- [Giới Thiệu](#-giới-thiệu)
-- [Tính Năng](#-tính-năng)
-- [Tech Stack](#-tech-stack)
-- [Cấu Trúc Dự Án](#-cấu-trúc-dự-án)
-- [Cài Đặt & Chạy](#-cài-đặt--chạy)
-- [Build & Triển Khai](#-build--triển-khai)
-- [Hướng Dẫn Sử Dụng](#-hướng-dẫn-sử-dụng)
-- [Đóng Góp](#-đóng-góp)
-- [Giấy Phép](#-giấy-phép)
+- dễ dùng cho gia đình
+- không phụ thuộc vào Excel thủ công
+- vẫn dùng được khi mất mạng
+- có thể xuất phiếu và in biên lai khi cần
 
----
+Ứng dụng phù hợp cho:
 
-## 📖 Giới Thiệu
+- gia đình có nhiều phòng
+- nhà trọ nhỏ
+- khu trọ gia đình
+- người muốn quản lý điện nước bằng điện thoại hoặc trình duyệt
 
-**Điện Nước App** là ứng dụng quản lý ghi chỉ số điện nước dành cho **chủ nhà trọ, khu trọ, chung cư mini**. Ứng dụng giúp:
+## Bài toán ứng dụng giải quyết
 
-- Ghi nhận chỉ số điện nước hàng tháng cho từng cư dân / phòng
-- Tự động tính tiền dựa trên bảng giá cấu hình được
-- Theo dõi lịch sử, công nợ, trả trước qua các tháng
-- Xuất phiếu thu dạng **Word (.docx)** và **Excel (.xlsx)**
-- In phiếu qua **máy in Bluetooth** (ESC/POS)
-- Đồng bộ dữ liệu real-time qua **Firebase Firestore**
+Khi ghi điện nước thủ công, thường gặp các vấn đề:
 
-> 🌐 Chạy trên trình duyệt (PWA – hoạt động offline) hoặc đóng gói thành **APK Android** qua Capacitor.
+- dễ nhập sai số cũ, số mới
+- khó cộng nợ kỳ trước cho đúng
+- khó theo dõi ai đã đóng, ai chưa đóng
+- dễ mất dữ liệu khi đổi máy hoặc xóa trình duyệt
+- mất thời gian khi cần xuất phiếu hoặc in biên lai
 
----
+Ứng dụng này gom toàn bộ quy trình đó vào một nơi:
 
-## ✨ Tính Năng
+- quản lý danh sách cư dân
+- ghi chỉ số theo tháng
+- tự tính tiền điện, tiền nước
+- cộng dồn công nợ
+- sao lưu và khôi phục dữ liệu
+- đồng bộ nhiều thiết bị qua Firebase nếu cần
 
-| Tính năng                  | Mô tả                                                                                        |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| 📝 **Ghi chỉ số**          | Nhập chỉ số điện / nước mới, so sánh với chỉ số cũ, tính số tiêu thụ                         |
-| 💰 **Tính tiền tự động**   | Áp dụng đơn giá cấu hình cho điện, nước, phòng, phụ phí                                      |
-| 📊 **Lịch sử & công nợ**   | Xem lại lịch sử theo tháng, tự động chuỗi nợ (debt chain) khi thay đổi trạng thái thanh toán |
-| 🏠 **Quản lý phòng**       | Thêm / sửa / xoá cư dân, gán theo phòng (zone)                                               |
-| 📄 **Xuất phiếu Word**     | Tạo phiếu thu `.docx` từ mẫu tuỳ chỉnh                                                       |
-| 📊 **Xuất Excel**          | Xuất bảng tổng hợp `.xlsx` cho tất cả cư dân                                                 |
-| 🖨️ **In Bluetooth**        | In phiếu thu qua máy in nhiệt ESC/POS kết nối Bluetooth                                      |
-| 📱 **QR Code**             | Quét / tạo mã QR để chia sẻ thông tin nhanh                                                  |
-| 🔄 **Đồng bộ Firebase**    | Real-time sync qua Firestore – bảo mật bằng **Firebase Auth** (Mật khẩu Quản trị)       |
-| 👥 **Phòng cộng tác**      | Tạo / tham gia phòng để nhiều người quản lý cùng lúc                                         |
-| 🔍 **Bộ lọc thanh toán**   | Lọc danh sách theo trạng thái: Tất cả / Đã đóng / Chưa đóng (Tháng hiện tại)                 |
-| ⚖️ **Cần gạt nợ cũ**       | Tùy chọn cộng hoặc loại bỏ nợ cũ vào tổng tiền thanh toán ngay trên giao diện                |
-| 🔔 **Thông báo Toast**     | Hệ thống thông báo trượt mượt mà, thay thế các hộp thoại alert() gây gián đoạn               |
-| 🌙 **Dark / Light mode**   | Chuyển giao diện sáng / tối, đồng bộ StatusBar trên Android                                  |
-| 📶 **Offline-first (PWA)** | Service Worker cache – hoạt động ngay cả khi mất mạng                                        |
-| 💾 **Backup / Restore**    | Sao lưu & khôi phục dữ liệu (import từ Excel)                                                |
+## Ảnh giao diện thực tế
 
----
+Các ảnh dưới đây được chụp trực tiếp từ bản build local của ứng dụng.
 
-## 🛠 Tech Stack
+### 1. Màn danh sách cư dân
 
-| Công nghệ                           | Vai trò                                   |
-| ----------------------------------- | ----------------------------------------- |
-| **Vite 7**                          | Build tool & dev server                   |
-| **Vanilla JavaScript (ES Modules)** | Logic ứng dụng – không framework          |
-| **HTML5 + CSS3**                    | Giao diện responsive, hỗ trợ safe-area    |
-| **Capacitor 5**                     | Đóng gói APK Android, truy cập native API |
-| **Firebase Firestore**              | Cơ sở dữ liệu cloud, đồng bộ real-time    |
-| **vite-plugin-pwa**                 | Tạo Service Worker cho PWA                |
-| **docx**                            | Tạo file Word (.docx) phía client         |
-| **ExcelJS / SheetJS**               | Đọc & ghi file Excel (.xlsx)              |
-| **jsQR / qrcode**                   | Quét & tạo mã QR                          |
-| **ESC/POS**                         | Giao thức in nhiệt qua Bluetooth          |
+![Màn danh sách cư dân](docs/screenshots/list-overview.png)
 
----
+### 2. Màn chi tiết cư dân
 
-## 📁 Cấu Trúc Dự Án
+![Màn chi tiết cư dân](docs/screenshots/detail-resident.png)
 
-```
+### 3. Màn cấu hình giá và sao lưu
+
+![Màn cấu hình giá và sao lưu](docs/screenshots/config-backup.png)
+
+### 4. Màn lịch sử theo tháng
+
+![Màn lịch sử theo tháng](docs/screenshots/history-month.png)
+
+## Tính năng chính
+
+- Ghi chỉ số điện nước theo từng phòng/cư dân
+- Tự tính tiền điện và tiền nước từ đơn giá cấu hình
+- Theo dõi nợ kỳ trước, tiền đã thu, số còn thiếu
+- Chuyển tháng và tạo lịch sử theo từng kỳ
+- Quản lý cư dân theo khu
+- Tìm kiếm và lọc nhanh theo trạng thái thanh toán
+- Xuất Word `.docx`
+- Xuất Excel `.xlsx`
+- In biên lai 58mm qua Bluetooth trên APK Android
+- Chạy offline bằng local storage / IndexedDB
+- Sao lưu và khôi phục dữ liệu
+- Đồng bộ nhiều thiết bị qua Firebase room
+
+## Điểm kỹ thuật nổi bật
+
+- Logic tính tiền không chỉ là `(số mới - số cũ) * đơn giá`, mà còn xử lý:
+  - nợ cũ
+  - tiền tạm ứng
+  - còn thiếu
+  - làm tròn tổng tiền
+- Có cơ chế rollover theo tháng và lan truyền công nợ từ lịch sử sang tháng hiện tại
+- Có hàng đợi đồng bộ để hạn chế lỗi khi đang offline rồi online lại
+- Chung một codebase cho web và Android, chỉ tách riêng phần native như Bluetooth và StatusBar
+
+Các file quan trọng:
+
+- `src/state/readings.js`: tính tiền, nợ, tạm ứng, CRUD cư dân
+- `src/state/history.js`: chuyển tháng, snapshot lịch sử, import tháng cũ
+- `src/sync/room.js`: đồng bộ Firebase room
+- `src/sync/pushQueue.js`: hàng đợi push dữ liệu
+- `src/export/wordDocx.js`: xuất file Word
+- `src/export/excel.js`: xuất file Excel
+- `src/print/bluetooth.js`: kết nối máy in Bluetooth
+
+## Công nghệ sử dụng
+
+| Công nghệ | Vai trò |
+| --- | --- |
+| Vite 7 | Dev server và build |
+| JavaScript ES Modules | Logic chính của ứng dụng |
+| HTML/CSS | Giao diện |
+| Capacitor 5 | Đóng gói APK Android |
+| Firebase Auth + Firestore | Đồng bộ nhiều thiết bị |
+| vite-plugin-pwa | Hỗ trợ PWA/offline |
+| docx / ExcelJS / xlsx | Xuất Word và Excel |
+| Bluetooth Serial + ESC/POS | In biên lai nhiệt |
+
+## Cấu trúc dự án
+
+```text
 dien-nuoc-app/
-├── index.html                 # Entry point HTML
-├── vite.config.js             # Cấu hình Vite (PWA + Capacitor)
-├── capacitor.config.json      # Cấu hình Capacitor (Android)
-├── package.json
-│
-├── public/                    # Tài nguyên tĩnh (icons)
-│
-├── src/
-│   ├── main.js                # Khởi động app, theme, PWA, Firebase
-│   ├── router.js              # SPA hash-based router
-│   ├── style.css              # Stylesheet chính
-│   │
-│   ├── views/                 # Các màn hình chính
-│   │   ├── ListView.js        # Danh sách cư dân & ghi chỉ số
-│   │   ├── FormView.js        # Form thêm / sửa cư dân
-│   │   ├── DetailView.js      # Chi tiết từng cư dân
-│   │   ├── ManageView.js      # Quản lý & chỉnh sửa nâng cao
-│   │   ├── HistoryView.js     # Lịch sử ghi chỉ số theo tháng
-│   │   ├── ConfigView.js      # Cấu hình đơn giá điện/nước
-│   │   ├── TemplateView.js    # Tuỳ chỉnh mẫu phiếu thu
-│   │   ├── RoomView.js        # Phòng cộng tác (Firebase room)
-│   │   └── backupview.js      # Sao lưu & khôi phục dữ liệu
-│   │
-│   ├── state/                 # Quản lý dữ liệu & logic nghiệp vụ
-│   │   ├── storage.js         # LocalStorage wrapper
-│   │   ├── readings.js        # Đọc/ghi chỉ số, tính tiền, chuỗi nợ
-│   │   ├── history.js         # Lịch sử tháng, rollover
-│   │   ├── rates.js           # Bảng giá mặc định
-│   │   ├── zones.js           # Phân vùng / khu vực
-│   │   ├── backup.js          # Logic backup/restore
-│   │   ├── importResidents.js # Import cư dân từ file
-│   │   └── xlsxImport.js      # Parse file Excel
-│   │
-│   ├── sync/                  # Đồng bộ cloud
-│   │   ├── firebase.js        # Khởi tạo Firebase
-│   │   ├── room.js            # Quản lý phòng cộng tác
-│   │   ├── pushQueue.js       # Hàng đợi đồng bộ offline
-│   │   └── safeMerge.js       # Merge dữ liệu an toàn
-│   │
-│   ├── export/                # Xuất file
-│   │   ├── word.js            # Xuất phiếu Word (HTML)
-│   │   ├── wordDocx.js        # Xuất phiếu Word (.docx)
-│   │   └── excel.js           # Xuất bảng Excel
-│   │
-│   ├── print/                 # In phiếu
-│   │   ├── bluetooth.js       # Kết nối máy in Bluetooth
-│   │   ├── escpos.js          # Lệnh ESC/POS
-│   │   ├── receipt.js         # Format phiếu thu
-│   │   ├── preview.js         # Xem trước phiếu
-│   │   ├── template.js        # Mẫu phiếu in
-│   │   └── qrDecode.js        # Giải mã QR
-│   │
-│   ├── utils/                 # Tiện ích chung
-│   │   ├── date.js            # Xử lý ngày tháng
-│   │   ├── format.js          # Định dạng số / tiền
-│   │   ├── numeric.js         # Hàm tính toán
-│   │   ├── normalize.js       # Chuẩn hoá dữ liệu
-│   │   ├── download.js        # Tải file xuống
-│   │   └── save.js            # Lưu & xuất dữ liệu
-│   │
-│   └── ui/                    # UI components dùng chung
-│       ├── syncIndicator.js   # Hiển thị trạng thái đồng bộ
-│       ├── backupFab.js       # Nút floating backup
-│       └── toast.js           # Hệ thống thông báo Toast (NEW)
-│
-└── android/                   # Project Android (Capacitor)
+|-- public/
+|-- src/
+|   |-- views/        # các màn hình chính
+|   |-- state/        # logic dữ liệu và tính toán
+|   |-- sync/         # Firebase, room sync, queue
+|   |-- export/       # xuất Word / Excel
+|   |-- print/        # in và xem trước biên lai
+|   |-- ui/           # thành phần giao diện dùng chung
+|   |-- utils/        # hàm tiện ích
+|-- android/          # dự án Android qua Capacitor
+|-- docs/
+|   |-- images/
+|   |-- screenshots/
 ```
 
----
-
-## 🚀 Cài Đặt & Chạy
+## Cài đặt và chạy local
 
 ### Yêu cầu
 
-- **Node.js** >= 18
-- **npm** >= 9
+- Node.js 18 trở lên
+- npm 9 trở lên
 
 ### Cài đặt
 
 ```bash
-# Clone repo
 git clone https://github.com/Duong200x/App-Web-diennuoc-.git
 cd dien-nuoc-app
-
-# Cài dependencies
 npm install
 ```
 
-### Chạy Development Server
+### Cấu hình môi trường
+
+Nếu muốn dùng chức năng đồng bộ Firebase, tạo file `.env` từ `.env.example`:
+
+```bash
+copy .env.example .env
+```
+
+Điền các biến sau:
+
+- `VITE_FB_API_KEY`
+- `VITE_FB_AUTH_DOMAIN`
+- `VITE_FB_PROJECT_ID`
+- `VITE_FB_STORAGE_BUCKET`
+- `VITE_FB_MESSAGING_SENDER_ID`
+- `VITE_FB_APP_ID`
+
+Nếu không cấu hình Firebase, app vẫn có thể chạy local để ghi số, tính tiền, sao lưu và xuất file trên một máy.
+
+### Chạy local
 
 ```bash
 npm run dev
 ```
 
-Mở trình duyệt tại `http://localhost:5173` để sử dụng.
+Địa chỉ mặc định:
 
----
+```text
+http://localhost:5173
+```
 
-## 📦 Build & Triển Khai
+## Build
 
-### Build Web (PWA)
+### Build web
 
 ```bash
 npm run build
 ```
 
-Thư mục `dist/` chứa bản build tĩnh, có thể deploy lên **Vercel**, **Netlify**, **Firebase Hosting**, hoặc bất kỳ static host nào.
-
 ### Build APK Android
 
 ```bash
-# Build web + sync với Capacitor
 npm run build:apk
-
-# Mở Android Studio để build APK
 npx cap open android
 ```
 
-> ⚠️ Cần cài đặt **Android Studio** và **Android SDK** để build APK.
+## Trạng thái kiểm chứng
 
----
+- Mình đã build thành công bản production local bằng `npm.cmd run build`
+- Mình đã chụp ảnh README trực tiếp từ bản build local của ứng dụng
+- Hiện tại script `npm test` vẫn chỉ là placeholder, chưa có test tự động thật
 
-## 📱 Hướng Dẫn Sử Dụng
+## Khi dùng chung Firebase project với app khác
 
-### 1. Thêm cư dân
+Nếu Firebase project này còn dùng chung với app khác, đặc biệt là app game hoặc app nội bộ khác, cần nhớ:
 
-Vào **"Thêm cư dân"** → Nhập tên, phòng, chỉ số điện nước ban đầu → Lưu.
+- Firestore Rules áp dụng cho cả database, không áp dụng riêng từng repo
+- namespace của app điện nước hiện dùng là `/rooms/**`
+- nếu publish rules từ app khác mà không merge namespace `/rooms/**`, chức năng đồng bộ của app điện nước có thể bị chặn
 
-### 2. Ghi chỉ số hàng tháng
+Nói ngắn gọn: nếu dùng chung Firebase project, phải quản lý rules theo kiểu hợp nhất.
 
-Tại **"Danh sách"** → Nhập chỉ số mới cho từng cư dân → Hệ thống tự tính tiền tiêu thụ.
+## Vì sao dự án này phù hợp để đưa vào portfolio intern
 
-### 3. Xem lịch sử & công nợ
+- Là bài toán thật, có người dùng thật
+- Có tính sản phẩm rõ ràng chứ không chỉ là demo giao diện
+- Có logic nghiệp vụ đáng kể
+- Có xử lý offline, backup, export, print, sync
+- Có cả hướng web và Android
 
-Vào menu **"Lịch sử"** → Chọn tháng để xem chi tiết, đánh dấu đã thanh toán / chưa thanh toán.
+## Hạn chế hiện tại
 
-### 4. Điều chỉnh giá
+- Chưa có ảnh demo trên điện thoại thật trong README
+- Chưa có video demo ngắn
+- Chưa có test tự động cho phần tính tiền và chuyển tháng
+- Một số file view còn lớn, đặc biệt là `ListView.js`
+- Firebase vẫn cần cấu hình thủ công
+- `SECURITY.md` hiện vẫn là file mẫu, chưa viết riêng theo dự án
 
-Vào menu **"Điều chỉnh giá"** → Thay đổi đơn giá điện, nước, tiền phòng, phụ phí.
+## Hướng cải thiện tiếp theo
 
-### 5. Xuất phiếu thu
+- Thêm video demo 30-60 giây
+- Viết unit test cho tính tiền và rollover tháng
+- Tách nhỏ các view lớn
+- Bổ sung dữ liệu mẫu để người mới clone có thể demo nhanh
+- Viết tài liệu riêng cho Firebase rules nếu dùng chung project
 
-Tại chi tiết cư dân → Chọn **Xuất Word** hoặc **Xuất Excel** để tải về phiếu thu.
+## Ghi chú
 
-### 6. In qua Bluetooth
+- Repo này hiện chưa có file license chính thức
+- `SECURITY.md` nên được viết lại hoặc bỏ nếu không dùng
 
-Kết nối máy in nhiệt → Chọn **In phiếu** để in trực tiếp qua Bluetooth.
+## Tác giả
 
-### 7. Đồng bộ nhiều thiết bị
-
-Vào menu **"Phòng"** → Tạo phòng mới hoặc nhập mã phòng. 
-> 🔐 **Bảo mật:** App sẽ yêu cầu nhập **Mật khẩu quản trị** trong lần đầu đồng bộ để bảo vệ dữ liệu trên Firestore.
-
-### 8. Bộ lọc & Tổng tiền
-
-Sử dụng bộ lọc đầu danh sách để tìm người **Chưa đóng tiền**. Sử dụng **cần gạt nợ** trong phần tổng cộng để tùy chỉnh việc cộng dồn nợ cũ vào hóa đơn hiện tại.
-
----
-
-## 🤝 Đóng Góp
-
-Mọi đóng góp đều được hoan nghênh! Vui lòng:
-
-1. **Fork** repo này
-2. Tạo branch: `git checkout -b feature/ten-tinh-nang`
-3. Commit: `git commit -m "Thêm tính năng XYZ"`
-4. Push: `git push origin feature/ten-tinh-nang`
-5. Tạo **Pull Request**
-
----
-
-## 📄 Giấy Phép
-
-Dự án này được phát triển bởi **[Trần Đình Dương](https://github.com/Duong200x)**.
-
----
-
-<p align="center">
-  Made with ❤️ for landlords in Vietnam 🇻🇳
-</p>
+Phát triển bởi [Trần Đình Dương](https://github.com/Duong200x).
