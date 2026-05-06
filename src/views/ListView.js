@@ -11,8 +11,10 @@ import { monthYearLabel } from "../utils/date.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
 import { importResidentsFromXlsxToCurrent } from "../state/importResidents.js";
 import { isInRoom, pushOneResident } from "../sync/room.js";
+import { ensureAuth } from "../sync/firebase.js";
 import { zoneLabel } from "../state/zones.js";
 import { forceCarryOverToCurrentMonth } from "../state/history.js";
+import { residentKey } from "../utils/normalize.js";
 
 /* ======= UI state for List (scroll + keyword + zone + lastOid) ======= */
 function rememberListUIState(rootEl, extras = {}) {
@@ -217,6 +219,8 @@ const norm = (s) =>
   String(s || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0111/g, "d")
+    .replace(/\u0110/g, "D")
     .toLowerCase()
     .trim();
 
@@ -282,13 +286,20 @@ export function mount(el) {
   ensureListExtraStyles();
 
   let all = listResidents();
-  let current = [...all];
+  let current = [];
   let keyword = "";
   let zoneFilter = "all";
   let paymentFilter = "all"; // all, paid, unpaid
   let includeDebt = true;   // mặc định có cộng nợ cũ
 
   const $ = (sel, root = el) => root.querySelector(sel);
+  const compareResident = (a, b) => {
+    const byName = norm(a?.name).localeCompare(norm(b?.name), "vi");
+    if (byName) return byName;
+    const byPlace = norm(a?.address || a?.zone).localeCompare(norm(b?.address || b?.zone), "vi");
+    if (byPlace) return byPlace;
+    return Number(a?.oldElec || 0) - Number(b?.oldElec || 0);
+  };
 
   // helper: đọc trạng thái popup sao lưu (fallback nếu chưa inject BackupFab)
   const LS_ENABLED = "ui.backupFab.enabled";
@@ -497,7 +508,7 @@ export function mount(el) {
         const disableAdvance = remaining <= 0;
 
         const actionsHtml = it.paid
-          ? `<span class="badge-paid">ĐÃ ĐÓNG</span><a class="btn secondary" href="#/manage/${oid}">Quản lý</a>`
+          ? `<span class="badge-paid">ĐÃ ĐÓNG</span><a class="btn secondary" href="#/manage/${encodeURIComponent(residentKey(it))}">Quản lý</a>`
           : `
             <label class="chk-paid" style="display:inline-flex;align-items:center;gap:6px;margin-right:8px;">
               <input type="checkbox" class="mark-paid" ${it.paid ? "checked" : ""}>
@@ -506,7 +517,7 @@ export function mount(el) {
             <button class="btn ghost btn-adv" ${disableAdvance ? "disabled" : ""}>Thu tạm ứng</button>
             <button class="btn ghost btn-adv-edit">Sửa số đã thu</button>
             <button class="btn ghost btn-edit">Chỉnh sửa</button>
-            <a class="btn secondary" href="#/manage/${oid}">Quản lý</a>
+            <a class="btn secondary" href="#/manage/${encodeURIComponent(residentKey(it))}">Quản lý</a>
           `;
 
         const zSmart = smartZoneOf(it);
@@ -515,7 +526,7 @@ export function mount(el) {
         return `
           <tr data-oid="${oid}">
             <td>
-              <a class="row-link" href="#/detail/${oid}">${it.name}</a>
+              <a class="row-link" href="#/detail/${encodeURIComponent(residentKey(it))}">${it.name}</a>
             </td>
             <td>${place}</td>
             <td>${it.oldElec}</td>
@@ -560,6 +571,7 @@ export function mount(el) {
         const tr = cb.closest("tr");
         const oid = Number(tr.dataset.oid);
         try {
+          if (isInRoom()) await ensureAuth();
           await setPaid(oid, cb.checked);
           if (isInRoom()) await pushOneResident(listResidents()[oid]);
           all = listResidents();
@@ -596,6 +608,7 @@ export function mount(el) {
         if (amount <= 0) { showToast("Số tiền không hợp lệ.", "error"); return; }
 
         try {
+          if (isInRoom()) await ensureAuth();
           await addAdvance(oid, amount);
           if (isInRoom()) await pushOneResident(listResidents()[oid]);
           all = listResidents();
@@ -622,6 +635,7 @@ export function mount(el) {
         if (raw == null) return;
         const val = Number(String(raw).replace(/[^\d]/g, "")) || 0;
         try {
+          if (isInRoom()) await ensureAuth();
           const willPaid = val >= a.total;
           await updateFull(oid, { advance: val, paid: willPaid });
           if (isInRoom()) await pushOneResident(listResidents()[oid]);
@@ -726,6 +740,7 @@ export function mount(el) {
 
         actions.querySelector(".btn-save").addEventListener("click", async () => {
           try {
+            if (isInRoom()) await ensureAuth();
             await updateInline(oid, {
               newElec: Number(inpE.value || 0),
               newWater: Number(inpW.value || 0),
@@ -762,10 +777,11 @@ export function mount(el) {
 
       return true;
     });
-    return res;
+    return res.slice().sort(compareResident);
   };
 
   // render đầu tiên
+  current = applyFilter();
   renderRows(current);
   restoreListUIState(el);
 
@@ -826,14 +842,14 @@ export function mount(el) {
     const ok = confirm(
       'Hành động này sẽ:\n' +
       '• Sao lưu bảng hiện tại thành lịch sử THÁNG TRƯỚC\n' +
-      '• Reset bảng THÁNG HIỆN TẠI: old = new tháng trước; new = 0; nợ cũ giữ nguyên\n\n' +
+      '• Reset bảng THÁNG HIỆN TẠI: old = new tháng trước; new = old; nợ cũ = phần còn thiếu của tháng trước\n\n' +
       'Bạn có chắc muốn tiếp tục?'
     );
     if (!ok) return;
     try {
-      const r = forceCarryOverToCurrentMonth();
+      if (isInRoom()) await ensureAuth();
+      const r = await forceCarryOverToCurrentMonth();
       showToast(`Đã lưu ${r.rows} dòng vào lịch sử ${r.savedMonth} và reset tháng ${r.currentMonth}`, "success");
-      if (isInRoom()) for (const it of listResidents()) await pushOneResident(it);
       all = listResidents();
       current = applyFilter();
       renderRows(current);
@@ -850,6 +866,7 @@ export function mount(el) {
     const f = inpImp.files?.[0];
     if (!f) return;
     try {
+      if (isInRoom()) await ensureAuth();
       const res = await importResidentsFromXlsxToCurrent(f);
       showToast(`Đã nhập: ${res.total} cư dân\n- Mới: ${res.added}\n- Cập nhật: ${res.updated}`, "success");
       if (isInRoom()) for (const it of listResidents()) await pushOneResident(it);

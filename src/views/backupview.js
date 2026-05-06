@@ -251,7 +251,7 @@ export function mount(el) {
         } catch (e) {
           alert((syncToRoom ? "Khôi phục/đồng bộ thất bại: " : "Khôi phục thất bại: ") + (e?.message || e));
         } finally {
-          try { loading?.hide?.(); } catch {}
+          try { loading?.(); } catch {}
         }
       };
 

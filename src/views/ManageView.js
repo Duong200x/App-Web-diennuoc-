@@ -8,12 +8,15 @@ import {
   updateFullAdmin,
   removeResident,
   computeAmounts,
+  renameResidentInHistory,
 } from "../state/readings.js";
+import { setJSON, KEYS } from "../state/storage.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
 import { ZONES, zoneLabel } from "../state/zones.js";
 import { isInRoom, pushOneResident, pushDeleteResident, fdbAsync } from "../sync/room.js";
 import { ensureAuth } from "../sync/firebase.js";
 import { showLoading } from "../ui/busy.js";
+import { showToast } from "../ui/toast.js";
 import { money } from "../utils/format.js";
 import { residentKey } from "../utils/normalize.js";
 
@@ -99,11 +102,22 @@ function refreshPreview(root, snapshot) {
 }
 
 export function mount(el, idx) {
-  const it = listResidents()[idx];
+  const all = listResidents();
+  const idxByNumber = Number(idx);
+  const resolvedIdx = Number.isInteger(idxByNumber)
+    ? idxByNumber
+    : all.findIndex((r) => residentKey(r) === String(idx || ""));
+  const it = all[resolvedIdx];
   if (!it) {
     el.innerHTML = `<div class="container"><div class="card"><h2>Không tìm thấy cư dân</h2></div></div>`;
     return;
   }
+  const initialKey = residentKey(it);
+  const getTargetIndex = () => {
+    const rows = listResidents();
+    const byKey = rows.findIndex((r) => residentKey(r) === initialKey);
+    return byKey >= 0 ? byKey : resolvedIdx;
+  };
 
   const zonesHtml = buildZoneOptions(it);
 
@@ -113,7 +127,7 @@ export function mount(el, idx) {
         <div class="toolbar" style="justify-content:space-between">
           <h2>Quản lý cư dân</h2>
           <div class="toolbar">
-            <a class="btn ghost" href="#/detail/${idx}">Chi tiết</a>
+            <a class="btn ghost" href="#/detail/${encodeURIComponent(residentKey(it))}">Chi tiết</a>
             <a class="btn" href="#/list">Danh sách</a>
           </div>
         </div>
@@ -259,17 +273,25 @@ export function mount(el, idx) {
         advance = Math.max(0, advance);
       }
 
-      const currentOldIt = listResidents()[idx];
+      const targetIdx = getTargetIndex();
+      const currentOldIt = listResidents()[targetIdx];
       const oldKey = residentKey(currentOldIt);
 
-      await updateFullAdmin(idx, {
+      await updateFullAdmin(targetIdx, {
         name, zone, address,
         oldElec, oldWater, newElec, newWater,
         prevDebt, advance, paid,
       });
 
+      try {
+        const freshAfterSave = listResidents()[targetIdx];
+        renameResidentInHistory(currentOldIt, freshAfterSave);
+      } catch (e) {
+        console.warn("renameResidentInHistory:", e);
+      }
+
       if (isInRoom()) {
-        const fresh = listResidents()[idx];
+        const fresh = listResidents()[targetIdx];
         const newKey = residentKey(fresh);
         if (oldKey !== newKey) {
           try { 
@@ -294,7 +316,7 @@ export function mount(el, idx) {
       }
       // Ở lại trang để tiếp tục chỉnh: render lại và khôi phục focus
       // Nếu bạn muốn quay về danh sách, thay bằng: goBackOneStepOrList();
-      refreshPreview(el, listResidents()[idx]);
+      refreshPreview(el, listResidents()[targetIdx]);
       restoreUIState(el);
     } catch (err) {
       showToast(err?.message || err, "error");
@@ -322,8 +344,9 @@ export function mount(el, idx) {
     const hide = showLoading("Đang xóa...");
 
     try {
-      const residentBeforeDelete = listResidents()[idx]; // lấy bản mới nhất trước khi xoá
-      const removed = removeResident(idx);
+      const targetIdx = getTargetIndex();
+      const residentBeforeDelete = listResidents()[targetIdx]; // lấy bản mới nhất trước khi xoá
+      const removed = removeResident(targetIdx);
       if (!removed) throw new Error("Không xóa được bản ghi.");
 
       if (isInRoom()) {

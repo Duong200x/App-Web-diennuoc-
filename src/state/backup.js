@@ -17,8 +17,12 @@ export function makeSnapshot() {
     electricityRate: Number(localStorage.getItem(KEYS.rateE) ?? 2800),
     waterRate: Number(localStorage.getItem(KEYS.rateW) ?? 10500),
     template: getStr(KEYS.tpl, ""),
+    template58: getStr(KEYS.tpl58, ""),
     due: getStr(KEYS.due, ""),
     contact: getStr(KEYS.contact, ""),
+    shop_name: getStr(KEYS.shop_name, ""),
+    shop_addr: getStr(KEYS.shop_addr, ""),
+    shop_phone: getStr(KEYS.shop_phone, ""),
 
     roomId: getStr(KEYS.roomId, ""),
     meta: {
@@ -54,15 +58,20 @@ export async function restoreFromJsonText(text) {
   if ("electricityRate" in obj) localStorage.setItem(KEYS.rateE, String(obj.electricityRate));
   if ("waterRate" in obj) localStorage.setItem(KEYS.rateW, String(obj.waterRate));
   if ("template" in obj) localStorage.setItem(KEYS.tpl, obj.template || "");
+  if ("template58" in obj) localStorage.setItem(KEYS.tpl58, obj.template58 || "");
   if ("due" in obj) localStorage.setItem(KEYS.due, obj.due || "");
   if ("contact" in obj) localStorage.setItem(KEYS.contact, obj.contact || "");
+  if ("shop_name" in obj) localStorage.setItem(KEYS.shop_name, obj.shop_name || "");
+  if ("shop_addr" in obj) localStorage.setItem(KEYS.shop_addr, obj.shop_addr || "");
+  if ("shop_phone" in obj) localStorage.setItem(KEYS.shop_phone, obj.shop_phone || "");
   // if ("roomId" in obj) localStorage.setItem(KEYS.roomId, obj.roomId || "");
 }
 
 export function clearAllData() {
   [
     KEYS.current, KEYS.history, KEYS.month,
-    KEYS.rateE, KEYS.rateW, KEYS.tpl, KEYS.due, KEYS.contact,
+    KEYS.rateE, KEYS.rateW, KEYS.tpl, KEYS.tpl58, KEYS.due, KEYS.contact,
+    KEYS.shop_name, KEYS.shop_addr, KEYS.shop_phone, KEYS.historyLastImp,
     KEYS.roomId,
   ].forEach(k => localStorage.removeItem(k));
 }

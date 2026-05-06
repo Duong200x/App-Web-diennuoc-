@@ -1,6 +1,6 @@
 // src/views/ConfigView.js
 import { getRates, setRates } from "../state/rates.js";
-import { initFirebase, getDb } from "../sync/firebase.js";
+import { initFirebase, getDb, clearAuthSession } from "../sync/firebase.js";
 import { showToast } from "../ui/toast.js";
 import {
   downloadBackup,
@@ -8,9 +8,11 @@ import {
   clearAllData,
   saveBackupLocal,
   readLatestBackupLocal,
-  listBackupsLocal
+  listBackupsLocal,
+  makeSnapshot,
 } from "../state/backup.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
+import { saveTextSmart } from "../utils/save.js";
 
 export function mount(el) {
   const { electricityRate, waterRate } = getRates();
@@ -148,8 +150,22 @@ export function mount(el) {
   });
 
   // Xóa dữ liệu
-  el.querySelector("#clearBtn").addEventListener("click", () => {
+  el.querySelector("#clearBtn").addEventListener("click", async () => {
     if (confirm("Xóa toàn bộ dữ liệu ứng dụng? (không thể hoàn tác)")) {
+      const shouldBackup = confirm("Bạn có muốn sao lưu vào file trước khi xóa không?");
+      if (shouldBackup) {
+        try {
+          const snap = makeSnapshot();
+          const d = new Date();
+          const p = (n) => String(n).padStart(2, "0");
+          const filename = `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}_diennuoc.json`;
+          await saveTextSmart(JSON.stringify(snap, null, 2), "application/json", filename);
+        } catch (e) {
+          showToast("Không thể sao lưu trước khi xóa: " + (e?.message || e), "error");
+          return;
+        }
+      }
+      try { await clearAuthSession(); } catch {}
       clearAllData();
       showToast("Đã xóa. Ứng dụng sẽ tải lại.", "success");
       location.hash = "#/list";

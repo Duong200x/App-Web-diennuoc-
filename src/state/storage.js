@@ -8,6 +8,7 @@ export const KEYS = {
   tpl:     "wordTemplate",
   due:     "defaultDue",
   contact: "defaultContact",
+  historyLastImp: "historyLastImp",
   tpl58:   "tpl58",          // Mẫu biên lai ESC/POS (58mm)
   shop_name:  "shop_name",
   shop_addr:  "shop_addr",

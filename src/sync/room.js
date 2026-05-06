@@ -7,13 +7,24 @@ import {
 import { getJSON, setJSON, getStr, setStr, KEYS } from "../state/storage.js";
 import { listResidents } from "../state/readings.js";
 import { saveBackupLocal } from "../state/backup.js";
+import { pushQueue } from "./pushQueue.js";
 import { mergeHistoryObjects } from "./safeMerge.js"; // merge 3-chiều
-import { enqueueHistory, enqueueResident, pushQueue } from "./pushQueue.js"; // hàng đợi đẩy
 
 /* ================= Helpers ================= */
 // (Common slug/norm helpers moved to normalize.js)
 const norm = (s) => deaccent(s).toLowerCase().trim();
 const nowIso = () => new Date().toISOString();
+
+function emitRoomError(errorOrMessage) {
+  const message = typeof errorOrMessage === "string"
+    ? errorOrMessage
+    : (errorOrMessage?.message || String(errorOrMessage || "Loi dong bo phong."));
+  try {
+    window.dispatchEvent(new CustomEvent("room:sync-error", {
+      detail: { message },
+    }));
+  } catch {}
+}
 
 async function touchRoomTimestamp(rid) {
   const db = await fdbAsync();
@@ -61,6 +72,20 @@ export async function fdbAsync() {
 
 function safeArray(xs) { return Array.isArray(xs) ? xs : []; }
 
+function sortRowsByOrder(rows) {
+  const list = safeArray(rows).map((row, idx) => ({ row, idx }));
+  const hasOrder = list.some(({ row }) => Number.isFinite(Number(row?.__order)));
+  if (!hasOrder) return list.map(({ row }) => row);
+  return list
+    .sort((a, b) => {
+      const ao = Number.isFinite(Number(a.row?.__order)) ? Number(a.row.__order) : Number.MAX_SAFE_INTEGER;
+      const bo = Number.isFinite(Number(b.row?.__order)) ? Number(b.row.__order) : Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      return a.idx - b.idx;
+    })
+    .map(({ row }) => row);
+}
+
 /** Dedupe theo name|address (slug), chọn updatedAt mới nhất & BỎ tài liệu _deleted */
 function dedupeRows(rows) {
   const m = new Map(); // key -> row
@@ -73,7 +98,7 @@ function dedupeRows(rows) {
     const tOld = Date.parse(prev?.updatedAt || prev?.updated_at || 0) || 0;
     if (tNew >= tOld) m.set(key, r);
   }
-  return Array.from(m.values());
+  return sortRowsByOrder(Array.from(m.values()));
 }
 
 /* ===== Refs cho meta & history ===== */
@@ -92,6 +117,28 @@ function getHistoryTouch()   { try { return Number(localStorage.getItem(KEY_HIST
 
 /* ====== Mốc base (last synced) cho merge 3-chiều ====== */
 const KEY_LAST_SYNCED_HISTORY = "__last_synced_history";
+let syncTaskSeq = 0;
+
+async function enqueueSyncTask({ key, label, run }) {
+  let lastError = null;
+  const queueKey = `${key}#${++syncTaskSeq}`;
+  pushQueue.enqueue({
+    key: queueKey,
+    label,
+    run: async () => {
+      lastError = null;
+      try {
+        await run();
+      } catch (e) {
+        lastError = e;
+        throw e;
+      }
+    },
+  });
+  await pushQueue.flush();
+  await pushQueue.drain();
+  if (lastError) throw lastError;
+}
 
 /* ================= Public API ================= */
 export function getRoomId() { return getStr(KEYS.roomId, ""); }
@@ -99,7 +146,7 @@ export function isInRoom() { return !!getRoomId(); }
 
 export async function createRoom() {
   const db = await fdbAsync();
-  if (!db) { console.warn("[room] No DB/Auth for createRoom"); return ""; }
+  if (!db) throw new Error("Khong the xac thuc Firebase de tao phong.");
 
   const roomId = Math.random().toString(36).slice(2, 8).toUpperCase();
   try {
@@ -111,7 +158,7 @@ export async function createRoom() {
     return roomId;
   } catch (e) {
     console.warn("[room] createRoom failed:", e?.message || e);
-    return "";
+    throw e;
   }
 }
 
@@ -129,35 +176,44 @@ export function enterRoom(roomId, onRemoteChange) {
 export async function pushDeleteResident(item, roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid || !item) return;
-  const db = await fdbAsync(); if (!db) return;
-
-  const col = collection(db, "rooms", rid, "residents");
   const id = item?.id || docIdFromResident(item);
-  try {
-    await deleteDoc(doc(col, id));
-    
-    // Ghi nhận vào hàng chờ xoá để onSnapshot không lôi nó ngược lại
-    const del = getDeletedSet(); 
-    del.add(id); 
-    saveDeletedSet(del);
-    
-    touchRoomTimestamp(rid);
-  } catch (e) {
-    console.warn("[room] pushDeleteResident failed:", e?.message || e);
-    throw e;
-  }
+  await enqueueSyncTask({
+    key: `DELETE:${rid}:${id}`,
+    label: `delete:${id}`,
+    run: async () => {
+      const db = await fdbAsync(); if (!db) return;
+      const col = collection(db, "rooms", rid, "residents");
+      try {
+        await deleteDoc(doc(col, id));
+
+        // Ghi nhận vào hàng chờ xoá để onSnapshot không lôi nó ngược lại
+        const del = getDeletedSet();
+        del.add(id);
+        saveDeletedSet(del);
+
+        await touchRoomTimestamp(rid);
+      } catch (e) {
+        console.warn("[room] pushDeleteResident failed:", e?.message || e);
+        throw e;
+      }
+    },
+  });
 }
 
 /* ================= LOW-LEVEL RAW PUSH (dùng trong queue) ================= */
 async function _pushAllResidentsRaw(roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid) return;
-  const db = await fdbAsync(); if (!db) return;
+  const db = await fdbAsync();
+  if (!db) throw new Error("Khong the xac thuc Firebase de dong bo danh sach cu dan.");
 
   try {
     const deleted = getDeletedSet();
     const col = collection(db, "rooms", rid, "residents");
-    const rows = listResidents();
+    const rows = listResidents().map((it, idx) => ({
+      ...it,
+      __order: Number.isFinite(Number(it?.__order)) ? Number(it.__order) : idx,
+    }));
     for (const it of rows) {
       const id = it.id || docIdFromResident(it);
       if (deleted.has(id)) continue; // không đẩy lại người đã xóa
@@ -166,29 +222,41 @@ async function _pushAllResidentsRaw(roomId = getRoomId()) {
     await touchRoomTimestamp(rid);
   } catch (e) {
     console.warn("[room] _pushAllResidentsRaw failed:", e?.message || e);
+    throw e;
   }
 }
 
 async function _pushOneResidentRaw(it, roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid || !it) return;
-  const db = await fdbAsync(); if (!db) return;
+  const db = await fdbAsync();
+  if (!db) throw new Error("Khong the xac thuc Firebase de dong bo cu dan.");
 
   try {
     const col = collection(db, "rooms", rid, "residents");
-    const id = it?.id || docIdFromResident(it || {});
-    await setDoc(doc(col, id), { ...it, _deleted: false, updatedAt: nowIso() }, { merge: true });
+    const currentRows = listResidents();
+    const currentIdx = currentRows.findIndex((row) => residentKey(row) === residentKey(it || {}));
+    const normalized = {
+      ...it,
+      __order: Number.isFinite(Number(it?.__order))
+        ? Number(it.__order)
+        : (currentIdx >= 0 ? currentIdx : currentRows.length),
+    };
+    const id = normalized?.id || docIdFromResident(normalized || {});
+    await setDoc(doc(col, id), { ...normalized, _deleted: false, updatedAt: nowIso() }, { merge: true });
     const del = getDeletedSet(); if (del.delete(id)) saveDeletedSet(del);
     touchRoomTimestamp(rid);
   } catch (e) {
     console.warn("[room] _pushOneResidentRaw failed:", e?.message || e);
+    throw e;
   }
 }
 
 async function _pushHistoryAllRaw(roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid) return;
-  const db = await fdbAsync(); if (!db) return;
+  const db = await fdbAsync();
+  if (!db) throw new Error("Khong the xac thuc Firebase de dong bo lich su.");
 
   try {
     // luôn backup local (giữ 5 bản) trước khi đẩy
@@ -204,19 +272,22 @@ async function _pushHistoryAllRaw(roomId = getRoomId()) {
     touchRoomTimestamp(rid);
   } catch (e) {
     console.warn("[room] _pushHistoryAllRaw failed:", e?.message || e);
+    throw e;
   }
 }
 
 async function _pushMonthPtrRaw(roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid) return;
-  const db = await fdbAsync(); if (!db) return;
+  const db = await fdbAsync();
+  if (!db) throw new Error("Khong the xac thuc Firebase de dong bo thang hien tai.");
   try {
     const month = getStr(KEYS.month, "");
     await setDoc(metaDocRef(db, rid), { month, updatedAt: nowIso() }, { merge: true });
     touchRoomTimestamp(rid);
   } catch (e) {
     console.warn("[room] _pushMonthPtrRaw failed:", e?.message || e);
+    throw e;
   }
 }
 
@@ -224,29 +295,47 @@ async function _pushMonthPtrRaw(roomId = getRoomId()) {
 
 /** Đẩy toàn bộ residents hiện có lên phòng (SYNC FULL) */
 export async function pushAllToRoom(roomId = getRoomId()) {
-  // thao tác bulk này giữ raw (không cần queue) vì gọi hiếm & có vòng lặp sẵn
-  await _pushAllResidentsRaw(roomId);
+  const rid = String(roomId || "").trim();
+  if (!rid) return;
+  await enqueueSyncTask({
+    key: `RESIDENTS:${rid}`,
+    label: `residents:${rid}`,
+    run: () => _pushAllResidentsRaw(rid),
+  });
 }
 
 /** Đẩy 1 cư dân – dùng trong ListView; GIỮ API cũ (await được) nhưng chạy hàng đợi */
 export async function pushOneResident(it, roomId = getRoomId()) {
+  const rid = String(roomId || "").trim();
   const id = it?.id || docIdFromResident(it || {});
-  enqueueResident(id, () => _pushOneResidentRaw(it, roomId));
-  // để giữ hành vi "await pushOneResident()" không bị vô nghĩa,
-  // ta ép flush queue hiện tại (chạy ngay tác vụ vừa enqueue)
-  await pushQueue.flush();
+  if (!rid || !id) return;
+  await enqueueSyncTask({
+    key: `RESIDENT:${rid}:${id}`,
+    label: `resident:${id}`,
+    run: () => _pushOneResidentRaw(it, rid),
+  });
 }
 
-/** Đẩy toàn bộ history hiện có lên phòng; GIỮ API cũ, chạy qua queue để coalesce */
+/** Đẩy toàn bộ history hiện có lên phòng */
 export async function pushHistoryAll(roomId = getRoomId()) {
-  enqueueHistory(() => _pushHistoryAllRaw(roomId));
-  await pushQueue.flush();
+  const rid = String(roomId || "").trim();
+  if (!rid) return;
+  await enqueueSyncTask({
+    key: `HISTORY:${rid}`,
+    label: `history:${rid}`,
+    run: () => _pushHistoryAllRaw(rid),
+  });
 }
 
 /** Đẩy month pointer hiện tại lên phòng (ít gọi) */
 export async function pushMonthPtr(roomId = getRoomId()) {
-  // việc này nhỏ/nhanh nên gọi raw trực tiếp cho đơn giản
-  await _pushMonthPtrRaw(roomId);
+  const rid = String(roomId || "").trim();
+  if (!rid) return;
+  await enqueueSyncTask({
+    key: `MONTH:${rid}`,
+    label: `month:${rid}`,
+    run: () => _pushMonthPtrRaw(rid),
+  });
 }
 
 /* ================= Realtime subscribe ================= */
@@ -286,8 +375,18 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
   let isSubbed = true;
 
   (async () => {
-    const db = await fdbAsync();
-    if (!db || !isSubbed) return;
+    let db = null;
+    try {
+      db = await fdbAsync();
+    } catch (e) {
+      emitRoomError(e);
+      return;
+    }
+    if (!db) {
+      emitRoomError("Khong the xac thuc Firebase de theo doi phong.");
+      return;
+    }
+    if (!isSubbed) return;
 
     // 1) Residents
     const colRef = collection(db, "rooms", rid, "residents");
@@ -319,7 +418,7 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
       const updated = curr.filter(it => {
         const id = residentKey(it);
         if (delSet.has(id)) return false; 
-        if (id && qsnap.docs.length > 0 && !liveKeys.has(id)) return false;
+        if (id && !liveKeys.has(id)) return false;
         return true;
       });
 
@@ -331,8 +430,12 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
       notify();
     } catch (e) {
       console.warn("[room] onSnapshot residents failed:", e?.message || e);
+      emitRoomError(e);
     }
-  }, (err) => console.warn("[room] onSnapshot residents error:", err?.message || err));
+  }, (err) => {
+    console.warn("[room] onSnapshot residents error:", err?.message || err);
+    emitRoomError(err);
+  });
 
   // 2) Month pointer
   unsubMeta = onSnapshot(metaDocRef(db, rid), (dsnap) => {
@@ -344,8 +447,14 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
           notify();
         }
       }
-    } catch (e) { console.warn("[room] onSnapshot meta failed:", e?.message || e); }
-  }, (err) => console.warn("[room] onSnapshot meta error:", err?.message || err));
+    } catch (e) {
+      console.warn("[room] onSnapshot meta failed:", e?.message || e);
+      emitRoomError(e);
+    }
+  }, (err) => {
+    console.warn("[room] onSnapshot meta error:", err?.message || err);
+    emitRoomError(err);
+  });
 
   // 3) History (ưu tiên bản local nếu vừa cập nhật; tránh remote rỗng đè local; MERGE 3-CHIỀU)
   unsubHistory = onSnapshot(historyDocRef(db, rid), (dsnap) => {
@@ -387,8 +496,14 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
         setJSON(KEY_LAST_SYNCED_HISTORY, merged); // cập nhật base
       }
       notify();
-    } catch (e) { console.warn("[room] onSnapshot history failed:", e?.message || e); }
-  }, (err) => console.warn("[room] onSnapshot history error:", err?.message || err));
+    } catch (e) {
+      console.warn("[room] onSnapshot history failed:", e?.message || e);
+      emitRoomError(e);
+    }
+  }, (err) => {
+    console.warn("[room] onSnapshot history error:", err?.message || err);
+    emitRoomError(err);
+  });
 
   })();
 
@@ -402,7 +517,8 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
 export async function joinRoom(roomId) {
   const rid = String(roomId || "").trim();
   if (!rid) return 0;
-  const db = await fdbAsync(); if (!db) return 0;
+  const db = await fdbAsync();
+  if (!db) throw new Error("Khong the xac thuc Firebase de tham gia phong.");
 
   try {
     const snap = await getDocs(collection(db, "rooms", rid, "residents"));
@@ -414,7 +530,7 @@ export async function joinRoom(roomId) {
     return rows.length;
   } catch (e) {
     console.warn("[room] joinRoom failed:", e?.message || e);
-    return 0;
+    throw e;
   }
 }
 

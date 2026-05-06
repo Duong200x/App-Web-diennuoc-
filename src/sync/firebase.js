@@ -3,7 +3,16 @@
 // Giữ API cũ: initFirebase() và getDb()
 
 import { initializeApp, getApps } from "firebase/app";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
+import {
+  getAuth,
+  initializeAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+} from "firebase/auth";
 import {
   getFirestore,
   initializeFirestore,
@@ -14,6 +23,7 @@ import {
 
 let _app = null;
 let _db  = null;
+let _auth = null;
 
 // === Cấu hình Firebase từ biến môi trường (.env) ===
 const FBCONFIG = {
@@ -71,13 +81,32 @@ export function getDb() {
   return _db;
 }
 
+function getAuthInstance() {
+  if (!_app) throw new Error("Firebase hasn't been initialized");
+  if (_auth) return _auth;
+
+  try {
+    _auth = initializeAuth(_app, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence,
+      ],
+    });
+  } catch {
+    _auth = getAuth(_app);
+  }
+
+  return _auth;
+}
+
 let _authPromise = null;
 
 export function ensureAuth() {
   // Bắt buộc gọi sau khi initFirebase()
   if (!_app) return Promise.reject(new Error("Firebase hasn't been initialized"));
 
-  const auth = getAuth(_app);
+  const auth = getAuthInstance();
   if (auth.currentUser) return Promise.resolve(auth.currentUser);
 
   if (!_authPromise) {
@@ -120,5 +149,16 @@ export function ensureAuth() {
     });
   }
   return _authPromise;
+}
+
+export async function clearAuthSession() {
+  if (!_app) return;
+  const auth = getAuthInstance();
+  _authPromise = null;
+  try {
+    await signOut(auth);
+  } catch (e) {
+    console.warn("[auth] signOut failed:", e?.message || e);
+  }
 }
 

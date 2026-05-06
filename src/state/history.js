@@ -61,12 +61,13 @@ function carryRemaining(row) {
  *      advance/paid/... reset
  *  - Đẩy room: history + current + month
  */
-export function rolloverMonth() {
+export async function rolloverMonth() {
   const saved = getStr(KEYS.month, ""); // 'YYYY-MM' đã lưu
   const current = getCurrentMonth();    // 'YYYY-MM' hiện tại
   if (saved === current) return current;
 
   const currData = getJSON(KEYS.current, []);
+  let shouldPushHistory = false;
 
   // Lưu snapshot tháng cũ (không ghi đè nếu đã có)
   if (saved && currData.length) {
@@ -74,7 +75,7 @@ export function rolloverMonth() {
     if (!hist[saved]) {
       hist[saved] = currData.map(snapshotRow);
       setJSON(KEYS.history, hist);
-      if (isInRoom()) pushHistoryAll(); // sync lịch sử
+      shouldPushHistory = true;
     }
   }
 
@@ -105,8 +106,9 @@ export function rolloverMonth() {
   setStr(KEYS.month, current);
 
   if (isInRoom()) {
-    pushAllToRoom();  // sync current
-    pushMonthPtr();   // sync month
+    if (shouldPushHistory) await pushHistoryAll(); // sync lịch sử
+    await pushAllToRoom();  // sync current
+    await pushMonthPtr();   // sync month
   }
 
   // reset marker chống “áp lịch sử tháng trước”
@@ -117,7 +119,7 @@ export function rolloverMonth() {
 }
 
 /** Ép chuyển sang tháng hiện tại ngay lập tức (dùng khi đang “kẹt tháng”) */
-export function forceRolloverNow() {
+export async function forceRolloverNow() {
   const current = getCurrentMonth();
   setStr(KEYS.month, prevMonthOf(current));
   return rolloverMonth();
@@ -129,17 +131,18 @@ export function forceRolloverNow() {
  * - Reset bảng tháng hiện tại theo đúng quy tắc nợ = còn thiếu
  * - Đẩy room: history + current + month
  */
-export function forceCarryOverToCurrentMonth() {
+export async function forceCarryOverToCurrentMonth() {
   const currentYM = getCurrentMonth();
   const prevYM = prevMonthOf(currentYM);
   const currData = getJSON(KEYS.current, []);
   const hist = getJSON(KEYS.history, {});
+  let shouldPushHistory = false;
 
   // 1) Ghi snapshot vào lịch sử tháng trước (ghi đè, có __*)
   if (currData.length) {
     hist[prevYM] = currData.map(snapshotRow);
     setJSON(KEYS.history, hist);
-    if (isInRoom()) pushHistoryAll();
+    shouldPushHistory = true;
   }
 
   const prevRows = hist[prevYM] || [];
@@ -172,8 +175,9 @@ export function forceCarryOverToCurrentMonth() {
   setStr(KEYS.month, currentYM);
 
   if (isInRoom()) {
-    pushAllToRoom();
-    pushMonthPtr();
+    if (shouldPushHistory) await pushHistoryAll();
+    await pushAllToRoom();
+    await pushMonthPtr();
   }
 
   // clear marker cho tháng hiện tại
@@ -217,7 +221,6 @@ export function importHistoryMonth(monthKey /* 'YYYY-MM' */, rows) {
   const hist = getJSON(KEYS.history, {});
   hist[monthKey] = normalized.map(snapshotRow);
   setJSON(KEYS.history, hist);
-  if (isInRoom()) pushHistoryAll();
 
   // Nếu là tháng liền trước → đẩy ảnh hưởng sang LIST hiện tại (một lần duy nhất)
   const current = getCurrentMonth();
@@ -245,7 +248,5 @@ export function importHistoryMonth(monthKey /* 'YYYY-MM' */, rows) {
 
     setJSON(KEYS.current, updated);
     setStr(markerKey, monthKey); // đánh dấu đã áp
-
-    if (isInRoom()) pushAllToRoom(); // sync current sau khi áp lịch sử
   }
 }

@@ -47,6 +47,7 @@ function normalizeResident(r) {
     name: String(r.name || "").trim(),
     zone,
     address,
+    __order: Number.isFinite(Number(r.__order)) ? Number(r.__order) : undefined,
 
     oldElec,
     oldWater,
@@ -79,7 +80,16 @@ export const listResidents = () =>
   getJSON(KEYS.current, []).map(normalizeResident);
 
 export const saveResidents = (arr) =>
-  setJSON(KEYS.current, arr.map(normalizeResident));
+  setJSON(KEYS.current, arr.map((row, idx) => normalizeResident({ ...row, __order: idx })));
+
+function ensureUniqueResidentKey(rows, nextRow, ignoreIdx = -1) {
+  const nextKey = residentKey(nextRow);
+  if (!nextKey) return;
+  const dupIdx = rows.findIndex((row, idx) => idx !== ignoreIdx && residentKey(row) === nextKey);
+  if (dupIdx !== -1) {
+    throw new Error("Cư dân với tên và địa chỉ/khu này đã tồn tại");
+  }
+}
 
 /* ------------- CRUD functions ------------- */
 /** Thêm cư dân mới */
@@ -115,6 +125,7 @@ export function addResident({
     paidAt: "",
   });
 
+  ensureUniqueResidentKey(arr, row);
   arr.push(row);
   saveResidents(arr);
 }
@@ -199,7 +210,9 @@ export function updateFull(idx, patch) {
     merged.paidAt = merged.paid ? today : "";
   }
 
-  arr[idx] = normalizeResident(merged);
+  const nextRow = normalizeResident(merged);
+  ensureUniqueResidentKey(arr, nextRow, idx);
+  arr[idx] = nextRow;
   saveResidents(arr);
   return arr[idx];
 }
@@ -240,7 +253,9 @@ export function updateFullAdmin(idx, patch) {
   if (patch.hasOwnProperty("advance"))  merged.advance  = Math.max(0, Number(patch.advance)  || 0);
   if (patch.hasOwnProperty("paid"))    { merged.paid    = !!patch.paid; merged.paidAt = merged.paid ? today : ""; }
 
-  arr[idx] = normalizeResident(merged);
+  const nextRow = normalizeResident(merged);
+  ensureUniqueResidentKey(arr, nextRow, idx);
+  arr[idx] = nextRow;
   saveResidents(arr);
   return arr[idx];
 }
@@ -415,7 +430,7 @@ export function updateHistoryRow(monthKey, idx, patch) {
   // tính lại snapshot: elec/water ưu tiên __* nếu có, chỉ cập nhật tổng & remaining theo prevDebt mới
   const elec = Number.isFinite(prev.__elec) ? Number(prev.__elec || 0) : computeAmounts(merged).elecMoney;
   const water = Number.isFinite(prev.__water) ? Number(prev.__water || 0) : computeAmounts(merged).waterMoney;
-  // FIX: Luôn lấy advance từ dữ liệu mới nhất (merged) thay vì giữ snapshot cũ
+  // Luôn lấy advance từ dữ liệu mới nhất (merged) thay vì giữ snapshot cũ
   let advanceSnap = Math.max(0, Number(merged.advance || 0));
   const debt = Math.max(0, Number(merged.prevDebt || 0));
   const total = elec + water + debt;
@@ -424,6 +439,14 @@ export function updateHistoryRow(monthKey, idx, patch) {
   if (merged.paid && advanceSnap <= 0) {
     advanceSnap = total;
     merged.advance = total;
+  }
+  // Nếu vừa hủy ĐÃ ĐÓNG mà số tạm ứng đang bằng/đè tổng tháng
+  // thì trả về 0 để số còn thiếu hiển thị đúng.
+  if (!merged.paid && prev?.paid && !patch.hasOwnProperty("advance")) {
+    if (advanceSnap >= total) {
+      advanceSnap = 0;
+      merged.advance = 0;
+    }
   }
 
   const remaining = merged.paid ? 0 : Math.max(total - advanceSnap, 0);
@@ -443,6 +466,46 @@ export function updateHistoryRow(monthKey, idx, patch) {
   propagateDebtUpdates(monthKey, merged.name, merged.address, merged.zone);
   recomputePrevDebtFromHistory();
   return rows[idx];
+}
+
+/**
+ * Đổi định danh cư dân trong toàn bộ lịch sử khi đổi tên/địa chỉ/khu.
+ * Mục tiêu: tránh đứt chuỗi dồn nợ do residentKey thay đổi.
+ */
+export function renameResidentInHistory(oldResident, newResident) {
+  const oldKey = residentKey(oldResident || {});
+  const newKey = residentKey(newResident || {});
+  if (!oldKey || !newKey || oldKey === newKey) return 0;
+
+  const h = getHistory();
+  let touched = 0;
+
+  for (const monthKey of Object.keys(h)) {
+    const rows = Array.isArray(h[monthKey]) ? h[monthKey] : [];
+    if (!rows.length) continue;
+
+    const oldIdx = rows.findIndex((r) => residentKey(r) === oldKey);
+    if (oldIdx === -1) continue;
+
+    // Nếu tháng này đã có sẵn bản ghi mang key mới thì bỏ qua để tránh đụng dữ liệu.
+    const hasNew = rows.some((r, idx) => idx !== oldIdx && residentKey(r) === newKey);
+    if (hasNew) continue;
+
+    rows[oldIdx] = {
+      ...rows[oldIdx],
+      name: String(newResident?.name || "").trim(),
+      zone: newResident?.zone || "khac",
+      address: newResident?.zone === "khac" ? String(newResident?.address || "").trim() : "",
+    };
+    h[monthKey] = rows;
+    touched++;
+  }
+
+  if (touched > 0) {
+    saveHistory(h);
+    recomputePrevDebtFromHistory();
+  }
+  return touched;
 }
 
 /* ---------------- FIX DỒN NỢ LAN TRUYỀN (CHAIN UPDATES) ---------------- */

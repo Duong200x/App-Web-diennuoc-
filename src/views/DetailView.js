@@ -4,6 +4,7 @@ import { money } from "../utils/format.js";
 import { monthYearLabel, fmtDMY } from "../utils/date.js";
 import { exportWordOneDocx } from "../export/wordDocx.js";
 import { openReceiptPreview } from "../print/preview.js";
+import { residentKey } from "../utils/normalize.js";
 
 /* ===== Helpers ===== */
 const roundK = (n) => Math.round((Number(n) || 0) / 1000) * 1000;
@@ -58,10 +59,15 @@ function ensureDetailKVStyles() {
 }
 
 /* ===== View ===== */
-export function mount(el, idx) {
+export function mount(el, residentRef) {
   ensureDetailKVStyles();
 
-  const item = listResidents()[idx];
+  const all = listResidents();
+  const idxByNumber = Number(residentRef);
+  const idx = Number.isInteger(idxByNumber)
+    ? idxByNumber
+    : all.findIndex((r) => residentKey(r) === String(residentRef || ""));
+  const item = all[idx];
   if (!item) {
     el.innerHTML = `
       <div class="container">
@@ -82,7 +88,7 @@ export function mount(el, idx) {
         <div class="toolbar" style="justify-content:space-between">
           <h2>Chi tiết cư dân • ${monthYearLabel()}</h2>
           <div class="toolbar">
-            <a class="btn ghost" href="#/manage/${idx}">Quản lý</a>
+            <a class="btn ghost" href="#/manage/${encodeURIComponent(residentKey(item))}">Quản lý</a>
             <a class="btn" href="#/list">Danh sách</a>
           </div>
         </div>

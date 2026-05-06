@@ -6,7 +6,7 @@ import { labelFromMonthKey, getCurrentMonth } from "../utils/date.js";
 import { importHistoryMonth } from "../state/history.js";
 import { parseHistoryXlsx, parseHistoryCsv } from "../state/xlsxImport.js";
 import { zoneLabel } from "../state/zones.js";
-import { isInRoom, pushHistoryAll } from "../sync/room.js";
+import { isInRoom, pushAllToRoom, pushHistoryAll } from "../sync/room.js";
 import { exportExcel } from "../export/excel.js";
 
 /* ================== UI state & helpers ================== */
@@ -168,6 +168,12 @@ function calcHash(obj) {
 /* ================== mount ================== */
 export function mount(el) {
   ensureHistorySumStyles();
+
+  async function syncRoomHistoryAndCurrent() {
+    if (!isInRoom()) return;
+    await pushHistoryAll();
+    await pushAllToRoom();
+  }
 
   el.innerHTML = `
     <div class="container">
@@ -431,12 +437,10 @@ export function mount(el) {
         try {
           recomputePrevDebtFromHistory();
         } catch {}
-        if (isInRoom()) {
-          try {
-            await pushHistoryAll();
-          } catch (err) {
-            console.warn("pushHistoryAll:", err);
-          }
+        try {
+          await syncRoomHistoryAndCurrent();
+        } catch (err) {
+          console.warn("syncRoomHistoryAndCurrent:", err);
         }
         rememberHistoryUIState(el);
         render();
@@ -462,7 +466,11 @@ export function mount(el) {
     // Helper chuẩn hoá chuỗi tìm kiếm (đã có ở history.js nhưng copy lại hoặc export từ đó nếu cần, 
     // ở đây viết luôn cho gọn vì scope view)
     function deaccent(s) {
-      return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D");
+      return String(s || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\u0111/g, "d")
+        .replace(/\u0110/g, "D");
     }
     function canon(s) {
       return deaccent(s).toLowerCase().trim();
@@ -499,12 +507,10 @@ export function mount(el) {
           console.warn("updateHistoryRow:", err);
         }
 
-        if (isInRoom()) {
-          try {
-            await pushHistoryAll();
-          } catch (err) {
-            console.warn("pushHistoryAll:", err);
-          }
+        try {
+          await syncRoomHistoryAndCurrent();
+        } catch (err) {
+          console.warn("syncRoomHistoryAndCurrent:", err);
         }
 
         const savedKey = `${mk}:${idx}`;
@@ -622,12 +628,10 @@ export function mount(el) {
       try {
         recomputePrevDebtFromHistory();
       } catch {}
-      if (isInRoom()) {
-        try {
-          await pushHistoryAll();
-        } catch (e) {
-          console.warn("pushHistoryAll:", e);
-        }
+      try {
+        await syncRoomHistoryAndCurrent();
+      } catch (e) {
+        console.warn("syncRoomHistoryAndCurrent:", e);
       }
 
       out.textContent = `Đã nhập ${totalRows} dòng cho ${

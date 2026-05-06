@@ -96,14 +96,14 @@ const replaceTokens = (s, data) =>
 
 /* ===================== storage ===================== */
 export function loadTemplate(){
-  // Ưu tiên khóa mới KEYS.tpl (đã thống nhất trong app)
+  // Ưu tiên khóa đúng cho template 58mm
   try {
-    const vNew = getStr?.(KEYS.tpl, "");
+    const vNew = getStr?.(KEYS.tpl58, "");
     if (vNew && vNew.trim()) return vNew;
   } catch {}
-  // Sau đó tới khóa cũ (giữ tương thích)
+  // Fallback tương thích cũ: nếu trước đây lỡ lưu nhầm vào template Word
   try {
-    const vOld = getStr?.(KEYS.tpl58, "");
+    const vOld = getStr?.(KEYS.tpl, "");
     if (vOld && vOld.trim()) return vOld;
   } catch {}
   // Fallback localStorage
@@ -116,7 +116,6 @@ export function loadTemplate(){
 
 export function saveTemplate(t){
   const val = String(t || "");
-  try { setStr?.(KEYS.tpl, val); return; } catch {}
   try { setStr?.(KEYS.tpl58, val); return; } catch {}
   try { localStorage.setItem(LOCAL_FALLBACK_KEY, val); } catch {}
 }

@@ -79,18 +79,22 @@ export function startRouter(appEl) {
   function _render() {
     const hash = normalize(location.hash);
     mountListOnce();
+    const parseResidentRef = (h) => {
+      const seg = h.split("/")[2] || "";
+      try { return decodeURIComponent(seg); } catch { return seg; }
+    };
 
     // route động
     if (hash.startsWith("#/detail/")) {
-      const idx = Number(hash.split("/")[2]);
+      const ref = parseResidentRef(hash);
       const target = showOverlay();
-      DetailView.mount(target, idx);
+      DetailView.mount(target, ref);
       return;
     }
     if (hash.startsWith("#/manage/")) {
-      const idx = Number(hash.split("/")[2]);
+      const ref = parseResidentRef(hash);
       const target = showOverlay();
-      ManageView.mount(target, idx);
+      ManageView.mount(target, ref);
       return;
     }
 

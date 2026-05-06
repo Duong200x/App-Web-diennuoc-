@@ -6,6 +6,7 @@ import { rolloverMonth } from "./state/history.js";
 import { initFirebase } from "./sync/firebase.js";
 import { isInRoom, subscribeRoom } from "./sync/room.js";
 import { recomputePrevDebtFromHistory } from "./state/readings.js";
+import { showToast } from "./ui/toast.js";
 import "./ui/syncIndicator.js";
 import "./routes/backupOverlay.js";
 import "./ui/backupFab.js";
@@ -135,7 +136,9 @@ window.addEventListener("DOMContentLoaded", () => {
   };
 
   // Start
-  rolloverMonth();
+  rolloverMonth().catch((err) => {
+    console.warn("[main] rolloverMonth failed:", err?.message || err);
+  });
   try { recomputePrevDebtFromHistory(); } catch {}
   
   // Chỉ gọi startRouter MỘT LẦN DUY NHẤT
@@ -197,4 +200,13 @@ window.addEventListener("DOMContentLoaded", () => {
   // Log trạng thái mạng
   window.addEventListener("online",  () => console.log("Đang online, sẽ tự đồng bộ."));
   window.addEventListener("offline", () => console.log("Mất mạng, ghi tạm offline."));
+
+  let lastRoomErr = { msg: "", at: 0 };
+  window.addEventListener("room:sync-error", (e) => {
+    const msg = e?.detail?.message || "Lỗi đồng bộ phòng.";
+    const now = Date.now();
+    if (lastRoomErr.msg === msg && now - lastRoomErr.at < 2500) return;
+    lastRoomErr = { msg, at: now };
+    showToast(msg, "error");
+  });
 });
