@@ -1,6 +1,7 @@
 // src/print/preview.js
 import { buildReceiptData, printReceiptWithOptions } from "./receipt.js";
 import { loadTemplate, renderPreview } from "./template.js";
+import { escapeHTML as esc } from "../utils/html.js";
 
 function isNative() {
   try {
@@ -348,7 +349,7 @@ export function openReceiptPreview({ shop, resident, bill }) {
           <div class="form-grid" style="margin-top:8px">
             <div>
               <label class="label">Nội dung QR (có thể sửa trực tiếp)</label>
-              <textarea id="pv-qr-payload" class="input qr-text" placeholder="VD: VietQR / URL / text...">${initQrPayload || ""}</textarea>
+              <textarea id="pv-qr-payload" class="input qr-text" placeholder="VD: VietQR / URL / text...">${esc(initQrPayload || "")}</textarea>
               <div class="muted">Nếu chọn từ thư viện: app sẽ đọc QR -> đổ vào ô này. Lần sau in không cần chọn lại.</div>
             </div>
             <div style="display:flex;align-items:flex-start;justify-content:center;">

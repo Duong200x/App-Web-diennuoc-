@@ -1,7 +1,7 @@
 // src/views/listview.js
 import {
   listResidents, updateInline, computeAmounts, setPaid,
-  addAdvance, updateFull, recomputePrevDebtFromHistory
+  addAdvance, updateFull, recomputePrevDebtFromHistory, ensureResidentIds
 } from "../state/readings.js";
 import { money } from "../utils/format.js";
 import { exportExcel } from "../export/excel.js";
@@ -14,7 +14,8 @@ import { isInRoom, pushOneResident } from "../sync/room.js";
 import { ensureAuth } from "../sync/firebase.js";
 import { zoneLabel } from "../state/zones.js";
 import { forceCarryOverToCurrentMonth } from "../state/history.js";
-import { residentKey } from "../utils/normalize.js";
+import { residentIdentity } from "../utils/normalize.js";
+import { escapeHTML as esc } from "../utils/html.js";
 
 /* ======= UI state for List (scroll + keyword + zone + lastOid) ======= */
 function rememberListUIState(rootEl, extras = {}) {
@@ -151,7 +152,9 @@ function ensureListExtraStyles() {
     }
     /* Toggle (cần gạt) */
     .switch{
-      display:inline-flex; align-items:center; gap:8px; user-select:none;
+      display:inline-flex; align-items:center; gap:8px;
+      -webkit-user-select:none;
+      user-select:none;
       font-size:14px;
     }
     .switch input{ position:absolute; opacity:0; width:0; height:0; }
@@ -321,6 +324,59 @@ export function mount(el) {
     } catch {}
   };
 
+  const setupCustomSelect = (targetId) => {
+    const hidden = $(`#${targetId}`);
+    const wrap = hidden?.closest(".custom-select");
+    if (!hidden || !wrap) return;
+
+    const btn = wrap.querySelector(".custom-select-btn");
+    const menu = wrap.querySelector(".custom-select-menu");
+    if (!btn || !menu) return;
+
+    const syncButton = () => {
+      const item = menu.querySelector(`button[data-value="${hidden.value}"]`);
+      if (!item) return;
+      btn.dataset.value = hidden.value;
+      btn.textContent = item.textContent.trim();
+    };
+
+    const close = () => {
+      menu.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+    };
+
+    const open = () => {
+      el.querySelectorAll(".custom-select-menu").forEach((m) => {
+        if (m !== menu) m.hidden = true;
+      });
+      menu.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+    };
+
+    btn.setAttribute("aria-haspopup", "listbox");
+    btn.setAttribute("aria-expanded", "false");
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (menu.hidden) open();
+      else close();
+    });
+
+    menu.querySelectorAll("button[data-value]").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hidden.value = item.dataset.value || "all";
+        syncButton();
+        close();
+        hidden.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
+
+    hidden.addEventListener("change", syncButton);
+    document.addEventListener("click", close);
+    syncButton();
+  };
+
   el.innerHTML = `
     <div class="container">
       <div class="card">
@@ -338,19 +394,27 @@ export function mount(el) {
         <div class="toolbar" style="margin-top:4px; gap:8px;">
           <input id="searchName" class="input" placeholder="Tìm theo tên (gõ không dấu)" style="flex:1; min-width:220px">
           
-          <select id="zoneFilter" class="input" style="width:auto">
-            <option value="all">Khu: Tất cả</option>
-            <option value="tren">Khu Trên</option>
-            <option value="giua">Khu Giữa</option>
-            <option value="duoi">Khu Dưới</option>
-            <option value="khac">Khác</option>
-          </select>
+          <div class="custom-select" data-target="zoneFilter">
+            <input type="hidden" id="zoneFilter" value="all">
+            <button type="button" class="custom-select-btn" data-value="all">Khu: Tất cả</button>
+            <div class="custom-select-menu" hidden>
+              <button type="button" data-value="all">Khu: Tất cả</button>
+              <button type="button" data-value="tren">Khu Trên</button>
+              <button type="button" data-value="giua">Khu Giữa</button>
+              <button type="button" data-value="duoi">Khu Dưới</button>
+              <button type="button" data-value="khac">Khác</button>
+            </div>
+          </div>
 
-          <select id="paymentFilter" class="input" style="width:auto">
-            <option value="all">Thanh toán: Tất cả</option>
-            <option value="unpaid">Chưa đóng tiền</option>
-            <option value="paid">Đã đóng tiền</option>
-          </select>
+          <div class="custom-select" data-target="paymentFilter">
+            <input type="hidden" id="paymentFilter" value="all">
+            <button type="button" class="custom-select-btn" data-value="all">Thanh toán: Tất cả</button>
+            <div class="custom-select-menu" hidden>
+              <button type="button" data-value="all">Thanh toán: Tất cả</button>
+              <button type="button" data-value="unpaid">Chưa đóng tiền</button>
+              <button type="button" data-value="paid">Đã đóng tiền</button>
+            </div>
+          </div>
 
           <!-- Toggle nút nổi sao lưu -->
           <label class="switch" id="fabToggleWrap" title="Ẩn/hiện nút nổi Sao lưu/Khôi phục">
@@ -415,6 +479,9 @@ export function mount(el) {
       </div>
     </div>
   `;
+
+  setupCustomSelect("zoneFilter");
+  setupCustomSelect("paymentFilter");
 
   // Khởi tạo trạng thái toggle từ BackupFab/localStorage
   const toggle = $("#fabToggle");
@@ -508,7 +575,7 @@ export function mount(el) {
         const disableAdvance = remaining <= 0;
 
         const actionsHtml = it.paid
-          ? `<span class="badge-paid">ĐÃ ĐÓNG</span><a class="btn secondary" href="#/manage/${encodeURIComponent(residentKey(it))}">Quản lý</a>`
+          ? `<span class="badge-paid">ĐÃ ĐÓNG</span><a class="btn secondary" href="#/manage/${encodeURIComponent(residentIdentity(it))}">Quản lý</a>`
           : `
             <label class="chk-paid" style="display:inline-flex;align-items:center;gap:6px;margin-right:8px;">
               <input type="checkbox" class="mark-paid" ${it.paid ? "checked" : ""}>
@@ -517,7 +584,7 @@ export function mount(el) {
             <button class="btn ghost btn-adv" ${disableAdvance ? "disabled" : ""}>Thu tạm ứng</button>
             <button class="btn ghost btn-adv-edit">Sửa số đã thu</button>
             <button class="btn ghost btn-edit">Chỉnh sửa</button>
-            <a class="btn secondary" href="#/manage/${encodeURIComponent(residentKey(it))}">Quản lý</a>
+            <a class="btn secondary" href="#/manage/${encodeURIComponent(residentIdentity(it))}">Quản lý</a>
           `;
 
         const zSmart = smartZoneOf(it);
@@ -526,9 +593,9 @@ export function mount(el) {
         return `
           <tr data-oid="${oid}">
             <td>
-              <a class="row-link" href="#/detail/${encodeURIComponent(residentKey(it))}">${it.name}</a>
+              <a class="row-link" href="#/detail/${encodeURIComponent(residentIdentity(it))}">${esc(it.name)}</a>
             </td>
-            <td>${place}</td>
+            <td>${esc(place)}</td>
             <td>${it.oldElec}</td>
             <td>${it.oldWater}</td>
             <td class="c-new-elec">${it.newElec}</td>
@@ -783,7 +850,6 @@ export function mount(el) {
   // render đầu tiên
   current = applyFilter();
   renderRows(current);
-  restoreListUIState(el);
 
   // Nhớ trạng thái khi cuộn & khi đổi route
   (function(){
@@ -829,6 +895,8 @@ export function mount(el) {
     rememberListUIState(el);
   });
 
+  restoreListUIState(el);
+
   // debt toggle
   $("#debtToggle").addEventListener("change", (e) => {
     includeDebt = e.target.checked;
@@ -868,6 +936,7 @@ export function mount(el) {
     try {
       if (isInRoom()) await ensureAuth();
       const res = await importResidentsFromXlsxToCurrent(f);
+      try { ensureResidentIds(); } catch {}
       showToast(`Đã nhập: ${res.total} cư dân\n- Mới: ${res.added}\n- Cập nhật: ${res.updated}`, "success");
       if (isInRoom()) for (const it of listResidents()) await pushOneResident(it);
       all = listResidents();

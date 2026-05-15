@@ -4,8 +4,9 @@ import "./style.css";
 import { startRouter } from "./router.js";
 import { rolloverMonth } from "./state/history.js";
 import { initFirebase } from "./sync/firebase.js";
-import { isInRoom, subscribeRoom } from "./sync/room.js";
-import { recomputePrevDebtFromHistory } from "./state/readings.js";
+import { isInRoom, pullRoomToLocal, subscribeRoom } from "./sync/room.js";
+import { ensureResidentIds, recomputePrevDebtFromHistory } from "./state/readings.js";
+import { saveBackupLocal } from "./state/backup.js";
 import { showToast } from "./ui/toast.js";
 import "./ui/syncIndicator.js";
 import "./routes/backupOverlay.js";
@@ -118,7 +119,7 @@ function bindHomeHardRefresh() {
 }
 
 /* ========= Khởi động ứng dụng ========= */
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   const app = document.getElementById("app");
   bindHomeHardRefresh();
 
@@ -136,6 +137,18 @@ window.addEventListener("DOMContentLoaded", () => {
   };
 
   // Start
+  try { ensureResidentIds(); } catch (err) {
+    console.warn("[main] ensureResidentIds failed:", err?.message || err);
+  }
+  if (isInRoom() && (typeof navigator === "undefined" || navigator.onLine !== false)) {
+    try {
+      try { saveBackupLocal(3); } catch {}
+      await pullRoomToLocal();
+      try { ensureResidentIds(); } catch {}
+    } catch (err) {
+      console.warn("[main] online-first room pull skipped:", err?.message || err);
+    }
+  }
   rolloverMonth().catch((err) => {
     console.warn("[main] rolloverMonth failed:", err?.message || err);
   });
@@ -155,6 +168,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!isInRoom()) return;
     roomSubStarted = true;
     subscribeRoom(() => {
+      try { ensureResidentIds(); } catch {}
       try { recomputePrevDebtFromHistory(); } catch {}
       window.__forceRender();
     });

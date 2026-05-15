@@ -1,5 +1,5 @@
 // src/state/readings.js
-import { residentKey } from "../utils/normalize.js";
+import { makeResidentId, residentIdentity, residentIdOf, residentKey } from "../utils/normalize.js";
 import { getJSON, setJSON, KEYS } from "./storage.js";
 import { getRates } from "./rates.js";
 import { todayISO, getCurrentMonth } from "../utils/date.js";
@@ -12,6 +12,48 @@ const toInt = (v, def = 0) => {
 
 // làm tròn nghìn
 const roundK = (n) => Math.round((Number(n) || 0) / 1000) * 1000;
+
+function carryRemaining(row) {
+  if (!row) return 0;
+  if (row.paid) return 0;
+  if (Number.isFinite(row.__remaining)) {
+    return Math.max(0, Number(row.__remaining || 0));
+  }
+  const a = computeAmounts(row);
+  const advance = Number.isFinite(row.__advance)
+    ? Number(row.__advance || 0)
+    : Math.max(0, Number(row.advance || 0));
+  return Math.max(0, a.total - advance);
+}
+
+function recalcHistorySnapshot(row, { keepUsageSnapshot = true } = {}) {
+  const normalized = normalizeResident(row || {});
+  const amounts = computeAmounts(normalized);
+  const elec = keepUsageSnapshot && Number.isFinite(row?.__elec)
+    ? Number(row.__elec || 0)
+    : amounts.elecMoney;
+  const water = keepUsageSnapshot && Number.isFinite(row?.__water)
+    ? Number(row.__water || 0)
+    : amounts.waterMoney;
+  const debt = Math.max(0, Number(normalized.prevDebt || 0));
+  const total = elec + water + debt;
+  let advance = Math.max(0, Number(normalized.advance || 0));
+
+  if (normalized.paid) {
+    advance = total;
+    normalized.advance = total;
+  }
+
+  const remaining = normalized.paid ? 0 : Math.max(total - advance, 0);
+  return {
+    ...normalized,
+    __elec: elec,
+    __water: water,
+    __total: total,
+    __advance: advance,
+    __remaining: remaining,
+  };
+}
 
 // YYYY-MM -> next month key
 function nextMonthKey(ym) {
@@ -29,6 +71,7 @@ function nextMonthKey(ym) {
 
 /* =============== Chuẩn hóa cư dân (compat cũ) =============== */
 function normalizeResident(r) {
+  const id = residentIdOf(r) || makeResidentId();
   const oldElec = toInt(r.oldElec, 0);
   const oldWater = toInt(r.oldWater, 0);
 
@@ -44,6 +87,8 @@ function normalizeResident(r) {
   const isNew = (oldElec === 0 && oldWater === 0) ? isNewFromData : false;
 
   return {
+    id,
+    residentId: id,
     name: String(r.name || "").trim(),
     zone,
     address,
@@ -65,6 +110,9 @@ function normalizeResident(r) {
 
     paid: !!r.paid,
     paidAt: r.paidAt || "",
+    active: r.active !== false,
+    movedOutAt: r.movedOutAt || "",
+    updatedAt: r.updatedAt || r.updated_at || "",
 
     // Persist snapshot fields if they exist
     __elec: r.__elec,
@@ -85,10 +133,44 @@ export const saveResidents = (arr) =>
 function ensureUniqueResidentKey(rows, nextRow, ignoreIdx = -1) {
   const nextKey = residentKey(nextRow);
   if (!nextKey) return;
-  const dupIdx = rows.findIndex((row, idx) => idx !== ignoreIdx && residentKey(row) === nextKey);
+  const nextId = residentIdOf(nextRow);
+  const dupIdx = rows.findIndex((row, idx) => (
+    idx !== ignoreIdx
+    && residentKey(row) === nextKey
+    && (!nextId || residentIdOf(row) !== nextId)
+  ));
   if (dupIdx !== -1) {
     throw new Error("Cư dân với tên và địa chỉ/khu này đã tồn tại");
   }
+}
+
+export function ensureResidentIds() {
+  const rawCurrent = getJSON(KEYS.current, []);
+  const normalizedCurrent = rawCurrent.map(normalizeResident);
+  const idByLegacyKey = new Map();
+  normalizedCurrent.forEach((row) => {
+    const key = residentKey(row);
+    if (key && !idByLegacyKey.has(key)) idByLegacyKey.set(key, residentIdOf(row));
+  });
+
+  const hist = getJSON(KEYS.history, {});
+  let touchedHistory = false;
+  const normalizedHistory = {};
+  for (const monthKey of Object.keys(hist || {})) {
+    const rows = Array.isArray(hist[monthKey]) ? hist[monthKey] : [];
+    normalizedHistory[monthKey] = rows.map((row) => {
+      const existingId = residentIdOf(row);
+      const legacyId = idByLegacyKey.get(residentKey(row));
+      const normalized = normalizeResident({ ...row, id: existingId || legacyId || makeResidentId() });
+      if (!existingId || normalized.id !== row.id || normalized.residentId !== row.residentId) touchedHistory = true;
+      return normalized;
+    });
+  }
+
+  const currentChanged = JSON.stringify(rawCurrent) !== JSON.stringify(normalizedCurrent);
+  if (currentChanged) saveResidents(normalizedCurrent);
+  if (touchedHistory) saveHistory(normalizedHistory);
+  return { currentChanged, historyChanged: touchedHistory };
 }
 
 /* ------------- CRUD functions ------------- */
@@ -402,19 +484,15 @@ export function saveHistoryMonthSnapshot(monthKey, rows /* Resident[] đã norma
   assertPastOrCurrentMonth(monthKey);
   // snapshot tổng (giữ nguyên theo thời điểm ghi)
   const snap = rows.map(r => {
-    const a = computeAmounts(r);
+    const row = recalcHistorySnapshot(r, { keepUsageSnapshot: false });
     return {
-      ...r,
-      __elec: a.elecMoney,
-      __water: a.waterMoney,
-      __total: a.total,
-      __advance: a.advance,
-      __remaining: a.remaining,
+      ...row,
     };
   });
   const h = getHistory();
   h[monthKey] = snap;
   saveHistory(h);
+  snap.forEach((row) => propagateDebtUpdates(monthKey, row));
   // Thêm/sửa lịch sử -> đồng bộ nợ về tháng hiện tại
   recomputePrevDebtFromHistory();
 }
@@ -425,34 +503,34 @@ export function updateHistoryRow(monthKey, idx, patch) {
   const rows = h[monthKey];
   if (!rows || !rows[idx]) throw new Error("Không tìm thấy bản ghi lịch sử");
   const prev = rows[idx];
-  const merged = normalizeResident({ ...prev, ...patch });
+  const nextInput = { ...prev, ...patch };
 
   // tính lại snapshot: elec/water ưu tiên __* nếu có, chỉ cập nhật tổng & remaining theo prevDebt mới
-  const elec = Number.isFinite(prev.__elec) ? Number(prev.__elec || 0) : computeAmounts(merged).elecMoney;
-  const water = Number.isFinite(prev.__water) ? Number(prev.__water || 0) : computeAmounts(merged).waterMoney;
+  const elec = Number.isFinite(prev.__elec) ? Number(prev.__elec || 0) : computeAmounts(nextInput).elecMoney;
+  const water = Number.isFinite(prev.__water) ? Number(prev.__water || 0) : computeAmounts(nextInput).waterMoney;
   // Luôn lấy advance từ dữ liệu mới nhất (merged) thay vì giữ snapshot cũ
-  let advanceSnap = Math.max(0, Number(merged.advance || 0));
-  const debt = Math.max(0, Number(merged.prevDebt || 0));
+  let advanceSnap = Math.max(0, Number(nextInput.advance || 0));
+  const debt = Math.max(0, Number(nextInput.prevDebt || 0));
   const total = elec + water + debt;
 
   // Nếu đánh dấu ĐÃ ĐÓNG mà chưa có tạm ứng -> coi như thu đủ
-  if (merged.paid && advanceSnap <= 0) {
+  if (nextInput.paid) {
     advanceSnap = total;
-    merged.advance = total;
+    nextInput.advance = total;
   }
   // Nếu vừa hủy ĐÃ ĐÓNG mà số tạm ứng đang bằng/đè tổng tháng
   // thì trả về 0 để số còn thiếu hiển thị đúng.
-  if (!merged.paid && prev?.paid && !patch.hasOwnProperty("advance")) {
+  if (!nextInput.paid && prev?.paid && !patch.hasOwnProperty("advance")) {
     if (advanceSnap >= total) {
       advanceSnap = 0;
-      merged.advance = 0;
+      nextInput.advance = 0;
     }
   }
 
-  const remaining = merged.paid ? 0 : Math.max(total - advanceSnap, 0);
+  const remaining = nextInput.paid ? 0 : Math.max(total - advanceSnap, 0);
 
   rows[idx] = {
-    ...merged,
+    ...normalizeResident(nextInput),
     __elec: elec,
     __water: water,
     __total: total,
@@ -463,7 +541,7 @@ export function updateHistoryRow(monthKey, idx, patch) {
   saveHistory(h);
 
   // mọi chỉnh sửa lịch sử -> dồn lại nợ cho tháng hiện tại (và CÁC THÁNG SAU NẾU CÓ)
-  propagateDebtUpdates(monthKey, merged.name, merged.address, merged.zone);
+  propagateDebtUpdates(monthKey, rows[idx]);
   recomputePrevDebtFromHistory();
   return rows[idx];
 }
@@ -475,7 +553,8 @@ export function updateHistoryRow(monthKey, idx, patch) {
 export function renameResidentInHistory(oldResident, newResident) {
   const oldKey = residentKey(oldResident || {});
   const newKey = residentKey(newResident || {});
-  if (!oldKey || !newKey || oldKey === newKey) return 0;
+  const newId = residentIdOf(newResident) || residentIdOf(oldResident);
+  if (!oldKey || !newKey) return 0;
 
   const h = getHistory();
   let touched = 0;
@@ -484,15 +563,22 @@ export function renameResidentInHistory(oldResident, newResident) {
     const rows = Array.isArray(h[monthKey]) ? h[monthKey] : [];
     if (!rows.length) continue;
 
-    const oldIdx = rows.findIndex((r) => residentKey(r) === oldKey);
+    const oldIdx = rows.findIndex((r) => (
+      (newId && residentIdOf(r) === newId) || residentKey(r) === oldKey
+    ));
     if (oldIdx === -1) continue;
 
     // Nếu tháng này đã có sẵn bản ghi mang key mới thì bỏ qua để tránh đụng dữ liệu.
-    const hasNew = rows.some((r, idx) => idx !== oldIdx && residentKey(r) === newKey);
+    const hasNew = rows.some((r, idx) => (
+      idx !== oldIdx && residentKey(r) === newKey && (!newId || residentIdOf(r) !== newId)
+    ));
     if (hasNew) continue;
 
+    const rowId = newId || residentIdOf(rows[oldIdx]) || makeResidentId();
     rows[oldIdx] = {
       ...rows[oldIdx],
+      id: rowId,
+      residentId: rowId,
       name: String(newResident?.name || "").trim(),
       zone: newResident?.zone || "khac",
       address: newResident?.zone === "khac" ? String(newResident?.address || "").trim() : "",
@@ -514,9 +600,11 @@ export function renameResidentInHistory(oldResident, newResident) {
  * Nếu Remaining(T+1) thay đổi, tiếp tục gọi đệ quy cho T+2...
  * Cho đến khi hết lịch sử.
  */
-function propagateDebtUpdates(startMonth, name, address, zone) {
+function propagateDebtUpdates(startMonth, resident) {
   const hist = getJSON(KEYS.history, {});
   let curr = startMonth;
+  const targetId = residentIdOf(resident);
+  const targetKey = residentKey(resident || {});
 
   // Lặp qua các tháng tiếp theo
   while (true) {
@@ -526,18 +614,21 @@ function propagateDebtUpdates(startMonth, name, address, zone) {
     // Tìm cư dân trong tháng kế
     const nextRows = hist[next];
     // NOTE: Còng logic khớp chính xác như recomputePrevDebtFromHistory
-    const key = residentKey({ name, address });
-    const idx = nextRows.findIndex(r => residentKey(r) === key);
+    const idx = nextRows.findIndex(r => (
+      (targetId && residentIdOf(r) === targetId) || residentKey(r) === targetKey
+    ));
 
     if (idx === -1) break; // Không tìm thấy người này ở tháng sau -> Stop chain
 
     // Tìm data tháng hiện tại (curr) để lấy remaining
     const currRows = hist[curr];
-    const currRow = currRows.find(r => residentKey(r) === key);
+    const currRow = currRows.find(r => (
+      (targetId && residentIdOf(r) === targetId) || residentKey(r) === targetKey
+    ));
     if (!currRow) break; // Should not happen
 
     // Tính nợ mang sang: Nếu đã paid -> 0, ngược lại lấy remaining
-    const carry = currRow.paid ? 0 : roundK(Math.max(0, Number(currRow.__remaining || 0)));
+    const carry = roundK(carryRemaining(currRow));
 
     // Check xem có cần update không
     const nextRow = nextRows[idx];
@@ -549,18 +640,18 @@ function propagateDebtUpdates(startMonth, name, address, zone) {
     }
 
     // Update & Recalculate
-    const merged = normalizeResident({ ...nextRow, prevDebt: carry });
+    const merged = recalcHistorySnapshot({ ...nextRow, prevDebt: carry });
 
     // Snapshot lại
     const elec = Number(nextRow.__elec || 0);
     const water = Number(nextRow.__water || 0);
     // Giữ nguyên advance cũ của tháng đó (vì ta chỉ đang đổi nợ đầu kỳ)
-    const advanceSnap = Number(nextRow.__advance || 0);
+    const advanceSnap = Number(merged.__advance || 0);
     
     // Tính lại total & remaining
     // Total = Elec + Water + NewPrevDebt
     const total = elec + water + Math.max(0, Number(merged.prevDebt || 0));
-    const remaining = Math.max(total - advanceSnap, 0);
+    const remaining = merged.paid ? 0 : Math.max(total - advanceSnap, 0);
 
     nextRows[idx] = {
       ...merged,
@@ -577,6 +668,13 @@ function propagateDebtUpdates(startMonth, name, address, zone) {
     
     curr = next;
   }
+}
+
+export function propagateHistoryDebtFromMonth(monthKey) {
+  const hist = getJSON(KEYS.history, {});
+  const rows = Array.isArray(hist?.[monthKey]) ? hist[monthKey] : [];
+  rows.forEach((row) => propagateDebtUpdates(monthKey, row));
+  recomputePrevDebtFromHistory();
 }
 
 
@@ -596,7 +694,7 @@ export function recomputePrevDebtFromHistory() {
   for (const m of months) {
     const rows = hist[m] || [];
     for (const r of rows) {
-      const key = residentKey(r);
+      const key = residentIdentity(r);
       // Ghi đè để tháng sau (mới hơn) replace tháng trước
       latestByKey.set(key, r);
     }
@@ -604,7 +702,7 @@ export function recomputePrevDebtFromHistory() {
 
   const curr = listResidents();
   const updated = curr.map((it) => {
-    const key = residentKey(it);
+    const key = residentIdentity(it);
     const r = latestByKey.get(key);
     if (!r) return it;
 

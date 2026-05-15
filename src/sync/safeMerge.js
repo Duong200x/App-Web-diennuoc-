@@ -1,5 +1,5 @@
 // src/sync/safeMerge.js
-import { residentKey } from "../utils/normalize.js";
+import { residentIdentity } from "../utils/normalize.js";
 //
 // Hợp nhất 3-chiều lịch sử dạng Object:
 //   { "YYYY-MM": [ rows... ], ... }
@@ -27,7 +27,7 @@ import { residentKey } from "../utils/normalize.js";
 // - Nếu bạn muốn “last-writer-wins” dựa trên timestamp, có thể bổ sung trường updatedAt và chỉnh resolver.
 
 // (Helpers moved to normalize.js)
-const docIdFromRow = residentKey;
+const docIdFromRow = residentIdentity;
 
 function indexByKey(arr) {
   const m = new Map();

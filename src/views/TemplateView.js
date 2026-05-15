@@ -1,4 +1,5 @@
 import { getStr, setStr, KEYS } from "../state/storage.js";
+import { escapeHTML as esc } from "../utils/html.js";
 
 // ===== Mặc định mẫu Word (giữ nguyên) =====
 const DEFAULT_TPL_WORD = `NGUOI QUAN LI {{APP_NAME}}
@@ -72,11 +73,11 @@ export function mount(el) {
     <div class="container">
       <div class="card">
         <h2>Mẫu phiếu (Word)</h2>
-        <textarea id="tplWord" class="input" style="width:100%;min-height:260px;">${tplWord}</textarea>
+        <textarea id="tplWord" class="input" style="width:100%;min-height:260px;">${esc(tplWord)}</textarea>
 
         <div class="form-grid" style="margin:10px 0;">
-          <input id="due" class="input" placeholder="Han thanh toan (tuy chon)" value="${due}"/>
-          <input id="contact" class="input" placeholder="Lien he" value="${contact}"/>
+          <input id="due" class="input" placeholder="Han thanh toan (tuy chon)" value="${esc(due)}"/>
+          <input id="contact" class="input" placeholder="Lien he" value="${esc(contact)}"/>
         </div>
         <div class="toolbar">
           <button id="saveWord" class="btn">Luu mau Word</button>
@@ -90,19 +91,19 @@ export function mount(el) {
         <div class="form-grid" style="margin:10px 0;">
           <div>
             <label class="label">Ten cua hang/ca nhan</label>
-            <input id="shop_name" class="input" placeholder="VD: NHA TRO ABC" value="${shopName}">
+            <input id="shop_name" class="input" placeholder="VD: NHA TRO ABC" value="${esc(shopName)}">
           </div>
           <div>
             <label class="label">Dia chi</label>
-            <input id="shop_addr" class="input" placeholder="VD: 123 Duong X, Quan Y" value="${shopAddr}">
+            <input id="shop_addr" class="input" placeholder="VD: 123 Duong X, Quan Y" value="${esc(shopAddr)}">
           </div>
           <div>
             <label class="label">Dien thoai</label>
-            <input id="shop_phone" class="input" placeholder="VD: 09xx.xxx.xxx" value="${shopPhone}">
+            <input id="shop_phone" class="input" placeholder="VD: 09xx.xxx.xxx" value="${esc(shopPhone)}">
           </div>
         </div>
 
-        <textarea id="tpl58" class="input" rows="16" style="font-family:ui-monospace,Menlo,Consolas,monospace">${tpl58}</textarea>
+        <textarea id="tpl58" class="input" rows="16" style="font-family:ui-monospace,Menlo,Consolas,monospace">${esc(tpl58)}</textarea>
 
         <div class="toolbar" style="margin-top:10px">
           <button class="btn" id="save58">Luu mau 58mm</button>

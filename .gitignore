@@ -11,7 +11,7 @@ lerna-debug.log*
 .env
 .env.local
 .env.*.local
-
+Rule.md
 node_modules
 dist
 dist-ssr

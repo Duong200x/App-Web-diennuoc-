@@ -10,15 +10,16 @@ import {
   computeAmounts,
   renameResidentInHistory,
 } from "../state/readings.js";
-import { setJSON, KEYS } from "../state/storage.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
 import { ZONES, zoneLabel } from "../state/zones.js";
-import { isInRoom, pushOneResident, pushDeleteResident, fdbAsync } from "../sync/room.js";
+import { isInRoom, pushOneResident, pushDeleteResident } from "../sync/room.js";
 import { ensureAuth } from "../sync/firebase.js";
 import { showLoading } from "../ui/busy.js";
 import { showToast } from "../ui/toast.js";
 import { money } from "../utils/format.js";
-import { residentKey } from "../utils/normalize.js";
+import { residentIdentity, residentKey } from "../utils/normalize.js";
+import { escapeHTML as esc } from "../utils/html.js";
+import { optionButtons, setupCustomSelect } from "../ui/customSelect.js";
 
 /* Lùi 1 bước nếu có trạng thái list, fallback về #/list */
 function goBackOneStepOrList() {
@@ -58,8 +59,7 @@ function restoreUIState(root) {
 
 /* Tạo HTML option cho Zone */
 function buildZoneOptions(it) {
-  const z = it.zone || "khac";
-  return ZONES.map(o => `<option value="${o.key}" ${z === o.key ? "selected" : ""}>${o.label}</option>`).join("");
+  return optionButtons(ZONES.map((o) => ({ value: o.key, label: o.label })));
 }
 
 /* Sync trạng thái ô địa chỉ theo zone */
@@ -106,16 +106,16 @@ export function mount(el, idx) {
   const idxByNumber = Number(idx);
   const resolvedIdx = Number.isInteger(idxByNumber)
     ? idxByNumber
-    : all.findIndex((r) => residentKey(r) === String(idx || ""));
+    : all.findIndex((r) => residentIdentity(r) === String(idx || "") || residentKey(r) === String(idx || ""));
   const it = all[resolvedIdx];
   if (!it) {
     el.innerHTML = `<div class="container"><div class="card"><h2>Không tìm thấy cư dân</h2></div></div>`;
     return;
   }
-  const initialKey = residentKey(it);
+  const initialKey = residentIdentity(it);
   const getTargetIndex = () => {
     const rows = listResidents();
-    const byKey = rows.findIndex((r) => residentKey(r) === initialKey);
+    const byKey = rows.findIndex((r) => residentIdentity(r) === initialKey || residentKey(r) === initialKey);
     return byKey >= 0 ? byKey : resolvedIdx;
   };
 
@@ -127,7 +127,7 @@ export function mount(el, idx) {
         <div class="toolbar" style="justify-content:space-between">
           <h2>Quản lý cư dân</h2>
           <div class="toolbar">
-            <a class="btn ghost" href="#/detail/${encodeURIComponent(residentKey(it))}">Chi tiết</a>
+            <a class="btn ghost" href="#/detail/${encodeURIComponent(residentIdentity(it))}">Chi tiết</a>
             <a class="btn" href="#/list">Danh sách</a>
           </div>
         </div>
@@ -135,15 +135,19 @@ export function mount(el, idx) {
         <form id="manage">
           <div class="form-grid">
             <label class="label">Tên
-              <input class="input" id="name" value="${it.name}">
+              <input class="input" id="name" value="${esc(it.name)}">
             </label>
 
             <label class="label">Khu
-              <select id="zoneSel" class="input">${zonesHtml}</select>
+              <div class="custom-select" data-target="zoneSel">
+                <input type="hidden" id="zoneSel" value="${esc(it.zone || "khac")}">
+                <button type="button" class="custom-select-btn" data-value="${esc(it.zone || "khac")}">${zoneLabel(it.zone || "khac")}</button>
+                <div class="custom-select-menu" hidden>${zonesHtml}</div>
+              </div>
             </label>
 
             <label class="label">Địa chỉ (chỉ nhập khi chọn Khác)
-              <input class="input" id="addrInp" value="${it.address || ""}" placeholder="Nhập địa chỉ (không bắt buộc)">
+              <input class="input" id="addrInp" value="${esc(it.address || "")}" placeholder="Nhập địa chỉ (không bắt buộc)">
             </label>
 
             <label class="label">Điện cũ (kWh)
@@ -209,6 +213,7 @@ export function mount(el, idx) {
   // Khóa/mở ô địa chỉ theo zone
   const zoneSel = el.querySelector("#zoneSel");
   const addrInp = el.querySelector("#addrInp");
+  setupCustomSelect(el, "zoneSel");
   syncAddrLock(zoneSel, addrInp);
   zoneSel.addEventListener("change", () => syncAddrLock(zoneSel, addrInp));
 
@@ -275,7 +280,6 @@ export function mount(el, idx) {
 
       const targetIdx = getTargetIndex();
       const currentOldIt = listResidents()[targetIdx];
-      const oldKey = residentKey(currentOldIt);
 
       await updateFullAdmin(targetIdx, {
         name, zone, address,
@@ -292,18 +296,6 @@ export function mount(el, idx) {
 
       if (isInRoom()) {
         const fresh = listResidents()[targetIdx];
-        const newKey = residentKey(fresh);
-        if (oldKey !== newKey) {
-          try { 
-            await pushDeleteResident(currentOldIt); 
-            // Gỡ triệt để khỏi local ngay để onSnapshot không lôi lại
-            const cleanList = listResidents().filter(r => residentKey(r) !== oldKey);
-            setJSON(KEYS.current, cleanList);
-          } catch (e) { 
-            showToast("Lỗi gỡ tên cũ: " + (e?.message || e), "error");
-            console.warn(e); 
-          }
-        }
         try { 
           await pushOneResident(fresh); 
           showToast("Đã cập nhật và đồng bộ.", "success");

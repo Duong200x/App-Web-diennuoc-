@@ -11,6 +11,7 @@ import {
 import { showLoading } from "../ui/busy.js";
 import { showToast } from "../ui/toast.js";
 import { ensureAuth } from "../sync/firebase.js";
+import { downloadBackup } from "../state/backup.js";
 
 function throttle(fn, ms = 300) {
   let t = 0;
@@ -199,7 +200,31 @@ export function mount(el) {
     if (e.key === "Enter") doJoin();
   });
 
-  btnLeave.addEventListener("click", () => {
+  btnLeave.addEventListener("click", async () => {
+    if (!getRoomId()) {
+      showToast("Bạn chưa ở trong phòng.", "info");
+      return;
+    }
+
+    const ok = confirm(
+      "Rời phòng sẽ ngắt đồng bộ và xóa bảng dữ liệu cục bộ của phòng này trên máy hiện tại.\n\n" +
+      "Dữ liệu trên phòng online không bị xóa. Bạn có chắc muốn rời phòng?"
+    );
+    if (!ok) return;
+
+    const shouldBackup = confirm("Tải bản backup JSON ra tệp trước khi rời phòng?");
+    if (shouldBackup) {
+      const hide = showLoading("Đang tạo tệp backup...");
+      try {
+        await downloadBackup();
+      } catch (e) {
+        showToast("Không thể tạo backup: " + (e?.message || e), "error");
+        return;
+      } finally {
+        hide();
+      }
+    }
+
     leaveRoom();
     showToast("Đã rời phòng.", "info");
     statusRid.textContent = "(chưa tham gia)";

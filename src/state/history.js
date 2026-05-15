@@ -1,5 +1,5 @@
 // src/state/history.js
-import { residentKey } from "../utils/normalize.js";
+import { residentIdentity, residentKey } from "../utils/normalize.js";
 import { getJSON, setJSON, getStr, setStr, KEYS } from "./storage.js";
 import { getCurrentMonth } from "../utils/date.js";
 import { computeAmounts } from "./readings.js"; // dùng khi nhập/snapshot lịch sử
@@ -13,7 +13,7 @@ import {
 } from "../sync/room.js";
 
 // (Moved to src/utils/normalize.js)
-const keyOf = residentKey;
+const keyOf = residentIdentity;
 
 /** dùng để đánh dấu đã áp lịch sử tháng trước vào tháng hiện tại (tránh cộng lặp) */
 const KEY_APPLIED_PREV_HISTORY_PREFIX = "__applied_prev_history_for__";
@@ -200,7 +200,13 @@ export function importHistoryMonth(monthKey /* 'YYYY-MM' */, rows) {
   if (!/^\d{4}-\d{2}$/.test(monthKey))
     throw new Error("Tháng không hợp lệ (YYYY-MM)");
 
-  const normalized = rows.map((r) => ({
+  const currByLegacyKey = new Map((getJSON(KEYS.current, []) || []).map((r) => [residentKey(r), r]));
+  const normalized = rows.map((r) => {
+    const current = currByLegacyKey.get(residentKey(r));
+    const id = r.residentId || r.id || current?.residentId || current?.id || "";
+    return {
+    id: id || undefined,
+    residentId: id || undefined,
     name: String(r.name || "").trim(),
     address: String(r.address || "").trim(),
     zone: r.zone || undefined,
@@ -215,7 +221,8 @@ export function importHistoryMonth(monthKey /* 'YYYY-MM' */, rows) {
     elecDate: r.elecDate ? String(r.elecDate) : "",
     waterDate: r.waterDate ? String(r.waterDate) : "",
     isNew: false,
-  }));
+  };
+  });
 
   // Lưu vào history (kèm snapshot __*)
   const hist = getJSON(KEYS.history, {});

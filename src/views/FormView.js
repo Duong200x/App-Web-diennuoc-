@@ -5,6 +5,7 @@ import { showToast } from "../ui/toast.js";
 import { ZONES, zoneLabel } from "../state/zones.js";
 import { isInRoom, pushOneResident } from "../sync/room.js";
 import { ensureAuth } from "../sync/firebase.js";
+import { optionButtons, setupCustomSelect } from "../ui/customSelect.js";
 
 function goBackOneStepOrList() {
   if (sessionStorage.getItem("list.ui") && window.history.length > 1) {
@@ -15,8 +16,7 @@ function goBackOneStepOrList() {
 
 export function mount(el) {
   const zoneOptions = ZONES
-    .map(z => `<option value="${z.key}" ${z.key === "khac" ? "selected" : ""}>${z.label}</option>`)
-    .join("");
+    .map((z) => ({ value: z.key, label: z.label }));
 
   el.innerHTML = `
     <div class="container">
@@ -30,9 +30,11 @@ export function mount(el) {
             </label>
 
             <label class="label">Khu vực
-              <select id="zoneSel" class="input">
-                ${zoneOptions}
-              </select>
+              <div class="custom-select" data-target="zoneSel">
+                <input type="hidden" id="zoneSel" value="khac">
+                <button type="button" class="custom-select-btn" data-value="khac">${zoneLabel("khac")}</button>
+                <div class="custom-select-menu" hidden>${optionButtons(zoneOptions)}</div>
+              </div>
             </label>
 
             <label class="label">Địa chỉ (chỉ nhập khi chọn Khác)
@@ -61,6 +63,7 @@ export function mount(el) {
   // Khóa/mở ô địa chỉ theo zone
   const zoneSel = el.querySelector("#zoneSel");
   const addrInp = el.querySelector("#addrInp");
+  setupCustomSelect(el, "zoneSel");
   const syncAddr = () => {
     if (zoneSel.value === "khac") {
       addrInp.disabled = false;

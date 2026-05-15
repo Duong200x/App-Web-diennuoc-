@@ -1,6 +1,6 @@
 // src/views/historyviews.js
 import { getJSON, setJSON, setStr, KEYS } from "../state/storage.js";
-import { computeAmounts, recomputePrevDebtFromHistory, updateHistoryRow } from "../state/readings.js";
+import { computeAmounts, propagateHistoryDebtFromMonth, recomputePrevDebtFromHistory, updateHistoryRow } from "../state/readings.js";
 import { money } from "../utils/format.js";
 import { labelFromMonthKey, getCurrentMonth } from "../utils/date.js";
 import { importHistoryMonth } from "../state/history.js";
@@ -8,6 +8,8 @@ import { parseHistoryXlsx, parseHistoryCsv } from "../state/xlsxImport.js";
 import { zoneLabel } from "../state/zones.js";
 import { isInRoom, pushAllToRoom, pushHistoryAll } from "../sync/room.js";
 import { exportExcel } from "../export/excel.js";
+import { escapeHTML as esc } from "../utils/html.js";
+import { optionButtons, setupCustomSelect, syncCustomSelect } from "../ui/customSelect.js";
 
 /* ================== UI state & helpers ================== */
 function rememberHistoryUIState(rootEl) {
@@ -31,6 +33,8 @@ function restoreHistoryUIState(rootEl) {
     const mSel = rootEl.querySelector("#monthSel");
     if (ySel && ui.year) ySel.value = ui.year;
     if (mSel && ui.month) mSel.value = ui.month;
+    syncCustomSelect(rootEl, "yearSel");
+    syncCustomSelect(rootEl, "monthSel");
 
     // reselect row
     if (ui.selectedKey) {
@@ -181,8 +185,16 @@ export function mount(el) {
         <div class="toolbar" style="justify-content:space-between">
           <h2>Lịch sử</h2>
           <div class="toolbar">
-            <select id="yearSel" class="input" style="width:auto"></select>
-            <select id="monthSel" class="input" style="width:auto"></select>
+            <div class="custom-select history-select" data-target="yearSel">
+              <input type="hidden" id="yearSel" value="all">
+              <button type="button" class="custom-select-btn" data-value="all">Năm: Tất cả</button>
+              <div class="custom-select-menu" hidden></div>
+            </div>
+            <div class="custom-select history-select" data-target="monthSel">
+              <input type="hidden" id="monthSel" value="all">
+              <button type="button" class="custom-select-btn" data-value="all">Tháng: Tất cả</button>
+              <div class="custom-select-menu" hidden></div>
+            </div>
             <button class="btn" id="apply">Áp dụng</button>
           </div>
         </div>
@@ -199,6 +211,9 @@ export function mount(el) {
     </div>
   `;
 
+  setupCustomSelect(el, "yearSel");
+  setupCustomSelect(el, "monthSel");
+
   function fillFilterOptions(history, keepSelection = true) {
     const yearSel = el.querySelector("#yearSel");
     const monthSel = el.querySelector("#monthSel");
@@ -210,18 +225,25 @@ export function mount(el) {
       b.localeCompare(a)
     );
 
-    yearSel.innerHTML =
-      `<option value="all">Năm: Tất cả</option>` +
-      years.map((y) => `<option value="${y}">${y}</option>`).join("");
+    yearSel.closest(".custom-select").querySelector(".custom-select-menu").innerHTML =
+      optionButtons([
+        { value: "all", label: "Năm: Tất cả" },
+        ...years.map((y) => ({ value: y, label: `Năm: ${y}` })),
+      ]);
 
-    monthSel.innerHTML =
-      `<option value="all">Tháng: Tất cả</option>` +
-      Array.from({ length: 12 }, (_, i) => i + 1)
-        .map((m) => `<option value="${String(m).padStart(2, "0")}">${m}</option>`)
-        .join("");
+    monthSel.closest(".custom-select").querySelector(".custom-select-menu").innerHTML =
+      optionButtons([
+        { value: "all", label: "Tháng: Tất cả" },
+        ...Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+          const mm = String(m).padStart(2, "0");
+          return { value: mm, label: `Tháng: ${m}` };
+        }),
+      ]);
 
     yearSel.value = years.includes(prevY) ? prevY : "all";
     monthSel.value = /^[0-1]\d$/.test(prevM) ? prevM : "all";
+    syncCustomSelect(el, "yearSel");
+    syncCustomSelect(el, "monthSel");
   }
 
   function render() {
@@ -293,8 +315,8 @@ export function mount(el) {
 
             return `
               <tr class="history-row" data-idx="${idx}" data-key="${k}:${idx}">
-                <td>${it.name || ""}</td>
-                <td>${place || ""}</td>
+                <td>${esc(it.name || "")}</td>
+                <td>${esc(place || "")}</td>
                 <td>${it.oldElec ?? ""}</td>
                 <td>${it.newElec ?? ""}</td>
                 <td>${it.oldWater ?? ""}</td>
@@ -621,6 +643,7 @@ export function mount(el) {
       let totalRows = 0;
       for (const [monthKey, arr] of Object.entries(byMonth)) {
         importHistoryMonth(monthKey, arr);
+        propagateHistoryDebtFromMonth(monthKey);
         totalRows += arr.length;
       }
       setStr(KEYS.historyLastImp, new Date().toISOString());
@@ -654,6 +677,7 @@ export function mount(el) {
   // === Auto-refresh khi history đổi (do sync từ thiết bị khác) ============
   let lastHash = calcHash(getJSON(KEYS.history, {}) || {});
   (function tick() {
+    if (!el.isConnected) return;
     try {
       const curr = getJSON(KEYS.history, {}) || {};
       const h = calcHash(curr);

@@ -1,5 +1,5 @@
 // src/sync/room.js
-import { residentKey, slug, deaccent } from "../utils/normalize.js";
+import { residentIdentity, residentKey, slug, deaccent } from "../utils/normalize.js";
 import { initFirebase, getDb, ensureAuth } from "./firebase.js";
 import {
   collection, doc, setDoc, deleteDoc, getDocs, onSnapshot, serverTimestamp,
@@ -45,11 +45,11 @@ function shortHash(s) {
 }
 
 // ID ổn định theo name|address
-const docIdFromResident = residentKey;
+const docIdFromResident = residentIdentity;
 
 // docId từ data (tombstone có name/address)
 function docIdFromData(data, fallbackId) {
-  return residentKey(data) || fallbackId;
+  return residentIdentity(data) || fallbackId;
 }
 
 function fdb() {
@@ -89,14 +89,25 @@ function sortRowsByOrder(rows) {
 /** Dedupe theo name|address (slug), chọn updatedAt mới nhất & BỎ tài liệu _deleted */
 function dedupeRows(rows) {
   const m = new Map(); // key -> row
+  const softToKey = new Map();
   for (const r of safeArray(rows)) {
     if (r?._deleted) continue; // bỏ tombstone
-    const key = residentKey(r);
-    const prev = m.get(key);
-    if (!prev) { m.set(key, r); continue; }
+    const key = residentIdentity(r);
+    const softKey = residentKey(r);
+    const prevKey = (softKey && softToKey.get(softKey)) || key;
+    const prev = m.get(prevKey);
+    if (!prev) {
+      m.set(key, r);
+      if (softKey) softToKey.set(softKey, key);
+      continue;
+    }
     const tNew = Date.parse(r?.updatedAt || r?.updated_at || 0) || 0;
     const tOld = Date.parse(prev?.updatedAt || prev?.updated_at || 0) || 0;
-    if (tNew >= tOld) m.set(key, r);
+    if (tNew >= tOld) {
+      if (prevKey !== key) m.delete(prevKey);
+      m.set(key, r);
+      if (softKey) softToKey.set(softKey, key);
+    }
   }
   return sortRowsByOrder(Array.from(m.values()));
 }
@@ -235,7 +246,7 @@ async function _pushOneResidentRaw(it, roomId = getRoomId()) {
   try {
     const col = collection(db, "rooms", rid, "residents");
     const currentRows = listResidents();
-    const currentIdx = currentRows.findIndex((row) => residentKey(row) === residentKey(it || {}));
+    const currentIdx = currentRows.findIndex((row) => residentIdentity(row) === residentIdentity(it || {}));
     const normalized = {
       ...it,
       __order: Number.isFinite(Number(it?.__order))
@@ -397,10 +408,10 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
         const data = d.data();
         // Bỏ qua nếu có cờ _deleted (tương thích cũ)
         if (!data._deleted) {
-          live.push({ ...data }); // Bỏ id: d.id để tránh xung đột key
+          live.push({ ...data, id: data.id || data.residentId || d.id, residentId: data.residentId || data.id || d.id });
         }
       });
-      const liveKeys = new Set(live.map(r => residentKey(r)));
+      const liveKeys = new Set(live.map(r => residentIdentity(r)));
       const delSet = getDeletedSet();
 
       // Cập nhật delSet: nếu server đã xoá thật thì gỡ khỏi hàng chờ
@@ -416,13 +427,13 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
       const curr = getJSON(KEYS.current, []) || [];
       
       const updated = curr.filter(it => {
-        const id = residentKey(it);
+        const id = residentIdentity(it);
         if (delSet.has(id)) return false; 
         if (id && !liveKeys.has(id)) return false;
         return true;
       });
 
-      const filteredLive = live.filter(r => !delSet.has(residentKey(r)));
+      const filteredLive = live.filter(r => !delSet.has(residentIdentity(r)));
 
       // Merge và dedupe
       const merged = dedupeRows(updated.concat(filteredLive));
@@ -523,7 +534,10 @@ export async function joinRoom(roomId) {
   try {
     const snap = await getDocs(collection(db, "rooms", rid, "residents"));
     const rows = [];
-    snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+    snap.forEach((d) => {
+      const data = d.data() || {};
+      rows.push({ ...data, id: data.id || data.residentId || d.id, residentId: data.residentId || data.id || d.id });
+    });
     setJSON(KEYS.current, dedupeRows(rows));
     setStr(KEYS.roomId, rid);
     subscribeRoom(null, rid);
@@ -535,6 +549,52 @@ export async function joinRoom(roomId) {
 }
 
 /** Hủy lắng nghe realtime (nếu có) */
+export async function fetchRoomSnapshot(roomId = getRoomId()) {
+  const rid = String(roomId || "").trim();
+  if (!rid) throw new Error("Chua vao phong.");
+  const db = await fdbAsync();
+  if (!db) throw new Error("Khong the xac thuc Firebase de tai du lieu phong.");
+
+  const residentsSnap = await getDocs(collection(db, "rooms", rid, "residents"));
+  const residents = [];
+  residentsSnap.forEach((d) => {
+    const data = d.data() || {};
+    if (data._deleted) return;
+    residents.push({ ...data, id: data.id || data.residentId || d.id, residentId: data.residentId || data.id || d.id });
+  });
+
+  const historySnap = await getDocs(collection(db, "rooms", rid, "history"));
+  let history = {};
+  historySnap.forEach((d) => {
+    if (d.id !== "all") return;
+    const data = d.data() || {};
+    history = data.history && typeof data.history === "object" ? data.history : {};
+  });
+
+  const metaSnap = await getDocs(collection(db, "rooms", rid, "meta"));
+  let month = "";
+  metaSnap.forEach((d) => {
+    if (d.id !== "state") return;
+    const data = d.data() || {};
+    month = data.month ? String(data.month) : "";
+  });
+
+  return {
+    roomId: rid,
+    current: dedupeRows(residents),
+    history,
+    month,
+  };
+}
+
+export async function pullRoomToLocal(roomId = getRoomId()) {
+  const snap = await fetchRoomSnapshot(roomId);
+  setJSON(KEYS.current, snap.current || []);
+  setJSON(KEYS.history, snap.history || {});
+  if (snap.month) setStr(KEYS.month, snap.month);
+  return snap;
+}
+
 export function unsubscribeRoom() {
   if (unsubResidents) { try { unsubResidents(); } catch {} unsubResidents = null; }
   if (unsubMeta)      { try { unsubMeta(); }      catch {} unsubMeta = null; }

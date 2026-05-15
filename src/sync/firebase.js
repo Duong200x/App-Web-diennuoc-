@@ -132,7 +132,7 @@ export function ensureAuth() {
             if (!pwd) {
               console.warn("[auth] No password provided.");
               _authPromise = null;
-              resolve(null); // Trả về null để báo hiệu không có quyền Online
+              reject(new Error("Đã hủy đăng nhập. Tác vụ đồng bộ phòng đã dừng lại."));
               return;
             }
 

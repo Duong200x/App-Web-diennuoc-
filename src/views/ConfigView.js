@@ -13,6 +13,7 @@ import {
 } from "../state/backup.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
 import { saveTextSmart } from "../utils/save.js";
+import { ensureResidentIds } from "../state/readings.js";
 
 export function mount(el) {
   const { electricityRate, waterRate } = getRates();
@@ -124,6 +125,7 @@ export function mount(el) {
     try {
       const text = await file.text();
       await restoreFromJsonText(text);
+      try { ensureResidentIds(); } catch {}
       showToast("Phục hồi thành công. Ứng dụng sẽ tải lại.", "success");
       location.hash = "#/list";
       setTimeout(() => window.location.reload(), 1500);
@@ -141,6 +143,7 @@ export function mount(el) {
       const snap = readLatestBackupLocal();
       if (!snap) { showToast("Không tìm thấy bản sao lưu cục bộ mới nhất.", "error"); return; }
       await restoreFromJsonText(JSON.stringify(snap));
+      try { ensureResidentIds(); } catch {}
       showToast("Đã phục hồi từ bản sao lưu cục bộ mới nhất. Ứng dụng sẽ tải lại.", "success");
       location.hash = "#/list";
       setTimeout(() => window.location.reload(), 1500);

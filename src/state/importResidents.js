@@ -1,12 +1,23 @@
 // src/state/importResidents.js
 import * as XLSX from "xlsx";
-import { residentKey, deaccent } from "../utils/normalize.js";
+import { residentIdentity, residentKey, deaccent } from "../utils/normalize.js";
 import { getJSON, setJSON, setStr, KEYS } from "./storage.js";
 import { getCurrentMonth } from "../utils/date.js";
 
 /* ===== Utils ===== */
 // (Common markers moved to normalize.js)
-const keyOf = residentKey;
+const keyOf = residentIdentity;
+const legacyKeyOf = residentKey;
+
+function existingImportKey(map, row) {
+  const idKey = keyOf(row);
+  if (map.has(idKey)) return idKey;
+  const legacyKey = legacyKeyOf(row);
+  for (const [k, v] of map.entries()) {
+    if (legacyKeyOf(v) === legacyKey) return k;
+  }
+  return idKey;
+}
 
 const norm = (s) => String(s ?? "").trim();
 const noAccent = (s) =>
@@ -253,10 +264,12 @@ export async function importResidentsFromXlsxToCurrent(file) {
   let added = 0, updated = 0;
 
   rows.forEach((r) => {
-    const k = keyOf(r);
+    const k = existingImportKey(map, r);
     if (map.has(k)) {
       const e = map.get(k);
       map.set(k, {
+        id: e.id || e.residentId,
+        residentId: e.residentId || e.id,
         ...e,
         oldElec: r.oldElec, newElec: r.newElec,
         oldWater: r.oldWater, newWater: r.newWater,
@@ -266,6 +279,8 @@ export async function importResidentsFromXlsxToCurrent(file) {
       updated++;
     } else {
       map.set(k, {
+        id: r.id || r.residentId,
+        residentId: r.residentId || r.id,
         name: r.name, address: r.address,
         oldElec: r.oldElec, newElec: r.newElec,
         oldWater: r.oldWater, newWater: r.newWater,
@@ -303,6 +318,8 @@ export async function importResidentsFromJsonToCurrent(fileOrText) {
 
   rows.forEach((r0) => {
     const r = {
+      id: norm(r0.id || r0.residentId || ""),
+      residentId: norm(r0.residentId || r0.id || ""),
       name: norm(r0.name),
       address: norm(r0.address || r0.zone || ""),
       oldElec: num(r0.oldElec), newElec: num(r0.newElec),
@@ -315,7 +332,7 @@ export async function importResidentsFromJsonToCurrent(fileOrText) {
       waterDate: norm(r0.waterDate || ""),
       isNew: !!r0.isNew,
     };
-    const k = keyOf(r);
+    const k = existingImportKey(map, r);
     if (map.has(k)) { map.set(k, { ...map.get(k), ...r }); updated++; }
     else { map.set(k, r); added++; }
   });

@@ -4,7 +4,8 @@ import { money } from "../utils/format.js";
 import { monthYearLabel, fmtDMY } from "../utils/date.js";
 import { exportWordOneDocx } from "../export/wordDocx.js";
 import { openReceiptPreview } from "../print/preview.js";
-import { residentKey } from "../utils/normalize.js";
+import { residentIdentity, residentKey } from "../utils/normalize.js";
+import { escapeHTML as esc } from "../utils/html.js";
 
 /* ===== Helpers ===== */
 const roundK = (n) => Math.round((Number(n) || 0) / 1000) * 1000;
@@ -66,7 +67,7 @@ export function mount(el, residentRef) {
   const idxByNumber = Number(residentRef);
   const idx = Number.isInteger(idxByNumber)
     ? idxByNumber
-    : all.findIndex((r) => residentKey(r) === String(residentRef || ""));
+    : all.findIndex((r) => residentIdentity(r) === String(residentRef || "") || residentKey(r) === String(residentRef || ""));
   const item = all[idx];
   if (!item) {
     el.innerHTML = `
@@ -88,7 +89,7 @@ export function mount(el, residentRef) {
         <div class="toolbar" style="justify-content:space-between">
           <h2>Chi tiết cư dân • ${monthYearLabel()}</h2>
           <div class="toolbar">
-            <a class="btn ghost" href="#/manage/${encodeURIComponent(residentKey(item))}">Quản lý</a>
+            <a class="btn ghost" href="#/manage/${encodeURIComponent(residentIdentity(item))}">Quản lý</a>
             <a class="btn" href="#/list">Danh sách</a>
           </div>
         </div>
@@ -99,8 +100,8 @@ export function mount(el, residentRef) {
           <b>Ngày ghi nước:</b> ${safeDMY(item.waterDate)}
         </p>
 
-        <p><b>Tên:</b> ${item.name || ""}</p>
-        <p><b>Địa chỉ:</b> ${item.address || ""}</p>
+        <p><b>Tên:</b> ${esc(item.name || "")}</p>
+        <p><b>Địa chỉ:</b> ${esc(item.address || "")}</p>
 
         <p>
           <b>Điện</b> — cũ: ${item.oldElec} kWh • mới: ${item.newElec} kWh

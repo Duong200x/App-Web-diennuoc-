@@ -15,9 +15,13 @@ import {
 import { money } from "../utils/format.js";
 import { saveTextSmart } from "../utils/save.js";
 import { showLoading } from "../ui/busy.js";
+import { mergeHistoryObjects } from "../sync/safeMerge.js";
+import { residentIdentity } from "../utils/normalize.js";
+import { ensureResidentIds } from "../state/readings.js";
 import {
   isInRoom,
   getRoomId,
+  fetchRoomSnapshot,
   pushAllToRoom,
   pushHistoryAll,
   pushMonthPtr,
@@ -93,6 +97,29 @@ function calcTotalsOfCurrent(current) {
     }, { e:0, w:0, t:0 });
     return `Điện: ${money(sum.e)} • Nước: ${money(sum.w)} • Tổng: ${money(sum.t)}`;
   } catch { return ""; }
+}
+
+function mergeCurrentRows(snapshotRows = [], remoteRows = []) {
+  const map = new Map();
+  (Array.isArray(remoteRows) ? remoteRows : []).forEach((row) => {
+    map.set(residentIdentity(row), row);
+  });
+  (Array.isArray(snapshotRows) ? snapshotRows : []).forEach((row) => {
+    const key = residentIdentity(row);
+    const remote = map.get(key) || {};
+    map.set(key, { ...remote, ...row });
+  });
+  return Array.from(map.values()).map((row, idx) => ({ ...row, __order: Number.isFinite(Number(row.__order)) ? Number(row.__order) : idx }));
+}
+
+function describeSnapshotCompare(localSnap, remoteSnap) {
+  const localMeta = countSnapshot(localSnap);
+  const remoteMeta = countSnapshot(remoteSnap);
+  return [
+    `Ban snapshot: ${localMeta.cur} cu dan hien tai, ${localMeta.months} thang lich su, ${localMeta.rows} dong lich su, thang ${localSnap?.month || "-"}.`,
+    `Ban tren database: ${remoteMeta.cur} cu dan hien tai, ${remoteMeta.months} thang lich su, ${remoteMeta.rows} dong lich su, thang ${remoteSnap?.month || "-"}.`,
+    "Ung dung se pull database truoc, merge de giu cac dong chi co tren database, sau do moi push ban da hop nhat len room.",
+  ].join("\n");
 }
 
 /* ===== View ===== */
@@ -220,15 +247,47 @@ export function mount(el) {
         const msg = syncToRoom
           ? "Khôi phục sẽ ghi đè dữ liệu hiện tại bằng dữ liệu trong bản sao lưu này và ĐẨY lên phòng (các máy khác sẽ tự cập nhật). Tiếp tục?"
           : "Khôi phục sẽ ghi đè dữ liệu hiện tại bằng dữ liệu trong bản sao lưu này. Tiếp tục?";
-        if (!confirm(msg)) return;
+        const confirmMsg = syncToRoom
+          ? "Ung dung se pull database truoc, cho xem so sanh, merge snapshot voi database roi moi day len phong. Tiep tuc?"
+          : msg;
+        if (!confirm(confirmMsg)) return;
 
         const loading = showLoading(syncToRoom ? "Đang khôi phục & đồng bộ..." : "Đang khôi phục...");
         try {
           const sn = readBackupLocal(key);
           if (!sn) throw new Error("Không đọc được bản sao lưu.");
 
+          if (syncToRoom) {
+            const rid = getRoomId();
+            if (!rid) throw new Error("Chua vao phong. Hay vao muc Phong de tao/nhap ma phong truoc.");
+            if (typeof navigator !== "undefined" && navigator.onLine === false) {
+              throw new Error("Dang offline. Hay bat mang roi thu dong bo lai.");
+            }
+
+            const remote = await fetchRoomSnapshot(rid);
+            if (!confirm(describeSnapshotCompare(sn, remote))) return;
+
+            const merged = {
+              ...sn,
+              current: mergeCurrentRows(sn.current, remote.current),
+              history: mergeHistoryObjects(remote.history || {}, sn.history || {}, remote.history || {}),
+              month: sn.month || remote.month || "",
+            };
+
+            await restoreFromJsonText(JSON.stringify(merged));
+            try { ensureResidentIds(); } catch {}
+            await pushAllToRoom(rid);
+            await pushHistoryAll(rid);
+            await pushMonthPtr(rid);
+
+            alert("Da pull database, merge snapshot va dong bo len phong.");
+            if (typeof window !== "undefined") window.location.reload();
+            return;
+          }
+
           // 1) Khôi phục local trước (offline vẫn làm được)
           await restoreFromJsonText(JSON.stringify(sn));
+          try { ensureResidentIds(); } catch {}
 
           // 2) Nếu chọn sync: đẩy snapshot lên phòng
           if (syncToRoom) {
@@ -292,6 +351,7 @@ export function mount(el) {
     try {
       const text = await f.text();
       await restoreFromJsonText(text);
+      try { ensureResidentIds(); } catch {}
       alert("Đã khôi phục dữ liệu từ tệp JSON.");
       window.location.reload();
     } catch (e) {
