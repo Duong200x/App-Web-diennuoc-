@@ -103,6 +103,7 @@ function getAuthInstance() {
 let _authPromise = null;
 
 export function ensureAuth() {
+  if (!_app) return Promise.reject(new Error("Firebase hasn't been initialized"));
   // Bắt buộc gọi sau khi initFirebase()
   if (!_app) return Promise.reject(new Error("Firebase hasn't been initialized"));
 

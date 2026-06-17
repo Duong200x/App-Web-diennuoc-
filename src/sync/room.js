@@ -2,7 +2,7 @@
 import { residentIdentity, residentKey, slug, deaccent } from "../utils/normalize.js";
 import { initFirebase, getDb, ensureAuth } from "./firebase.js";
 import {
-  collection, doc, setDoc, deleteDoc, getDocs, onSnapshot, serverTimestamp,
+  collection, doc, setDoc, deleteDoc, getDocs, getDoc, onSnapshot, serverTimestamp, runTransaction
 } from "firebase/firestore";
 import { getJSON, setJSON, getStr, setStr, KEYS } from "../state/storage.js";
 import { listResidents } from "../state/readings.js";
@@ -14,6 +14,7 @@ import { mergeHistoryObjects } from "./safeMerge.js"; // merge 3-chiều
 // (Common slug/norm helpers moved to normalize.js)
 const norm = (s) => deaccent(s).toLowerCase().trim();
 const nowIso = () => new Date().toISOString();
+const tsOf = (row) => Date.parse(row?.updatedAt || row?.updated_at || 0) || 0;
 
 function emitRoomError(errorOrMessage) {
   const message = typeof errorOrMessage === "string"
@@ -24,6 +25,25 @@ function emitRoomError(errorOrMessage) {
       detail: { message },
     }));
   } catch {}
+}
+
+function stripLocalOnly(row = {}) {
+  const { __pendingSync, ...rest } = row || {};
+  return rest;
+}
+
+function clearPendingForResident(id, pushedUpdatedAt = "") {
+  if (!id) return;
+  const rows = getJSON(KEYS.current, []) || [];
+  const pushedTs = Date.parse(pushedUpdatedAt || 0) || 0;
+  let touched = false;
+  const next = rows.map((row) => {
+    if (residentIdentity(row) !== id || !row.__pendingSync) return row;
+    if (pushedTs && tsOf(row) > pushedTs) return row;
+    touched = true;
+    return stripLocalOnly(row);
+  });
+  if (touched) setJSON(KEYS.current, next);
 }
 
 async function touchRoomTimestamp(rid) {
@@ -86,6 +106,36 @@ function sortRowsByOrder(rows) {
     .map(({ row }) => row);
 }
 
+function mergeResidentRows(localRows = [], remoteRows = []) {
+  const map = new Map();
+  safeArray(localRows).forEach((row, idx) => {
+    map.set(residentIdentity(row), {
+      ...row,
+      __order: Number.isFinite(Number(row?.__order)) ? Number(row.__order) : idx,
+    });
+  });
+
+  safeArray(remoteRows).forEach((remote, idx) => {
+    if (remote?._deleted) return;
+    const key = residentIdentity(remote);
+    const local = map.get(key);
+    const normalizedRemote = {
+      ...remote,
+      __pendingSync: false,
+      isSynced: true,
+      __order: Number.isFinite(Number(remote?.__order)) ? Number(remote.__order) : idx,
+    };
+    if (!local) {
+      map.set(key, normalizedRemote);
+      return;
+    }
+    if (local.__pendingSync) return;
+    if (tsOf(remote) >= tsOf(local)) map.set(key, normalizedRemote);
+  });
+
+  return dedupeRows(Array.from(map.values()));
+}
+
 /** Dedupe theo name|address (slug), chọn updatedAt mới nhất & BỎ tài liệu _deleted */
 function dedupeRows(rows) {
   const m = new Map(); // key -> row
@@ -101,8 +151,8 @@ function dedupeRows(rows) {
       if (softKey) softToKey.set(softKey, key);
       continue;
     }
-    const tNew = Date.parse(r?.updatedAt || r?.updated_at || 0) || 0;
-    const tOld = Date.parse(prev?.updatedAt || prev?.updated_at || 0) || 0;
+    const tNew = tsOf(r);
+    const tOld = tsOf(prev);
     if (tNew >= tOld) {
       if (prevKey !== key) m.delete(prevKey);
       m.set(key, r);
@@ -125,6 +175,9 @@ function saveDeletedSet(s) { setJSON(KEY_DELETED, Array.from(s || [])); }
 const KEY_HISTORY_TOUCH = "__history_updated_at";
 function touchHistoryLocal() { try { localStorage.setItem(KEY_HISTORY_TOUCH, String(Date.now())); } catch {} }
 function getHistoryTouch()   { try { return Number(localStorage.getItem(KEY_HISTORY_TOUCH) || 0); } catch { return 0; } }
+const KEY_HISTORY_PENDING = "__history_pending_sync";
+function hasHistoryPending() { try { return localStorage.getItem(KEY_HISTORY_PENDING) === "1"; } catch { return false; } }
+function clearHistoryPending() { try { localStorage.removeItem(KEY_HISTORY_PENDING); } catch {} }
 
 /* ====== Mốc base (last synced) cho merge 3-chiều ====== */
 const KEY_LAST_SYNCED_HISTORY = "__last_synced_history";
@@ -216,7 +269,7 @@ async function _pushAllResidentsRaw(roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid) return;
   const db = await fdbAsync();
-  if (!db) throw new Error("Khong the xac thuc Firebase de dong bo danh sach cu dan.");
+  if (!db) throw new Error("Khong the ket noi Firebase de dong bo danh sach cu dan.");
 
   try {
     const deleted = getDeletedSet();
@@ -228,7 +281,9 @@ async function _pushAllResidentsRaw(roomId = getRoomId()) {
     for (const it of rows) {
       const id = it.id || docIdFromResident(it);
       if (deleted.has(id)) continue; // không đẩy lại người đã xóa
-      await setDoc(doc(col, id), { ...it, _deleted: false, updatedAt: nowIso() }, { merge: true });
+      const pushedAt = it.updatedAt || nowIso();
+      await setDoc(doc(col, id), { ...stripLocalOnly(it), _deleted: false, updatedAt: pushedAt }, { merge: true });
+      clearPendingForResident(id, pushedAt);
     }
     await touchRoomTimestamp(rid);
   } catch (e) {
@@ -241,7 +296,7 @@ async function _pushOneResidentRaw(it, roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid || !it) return;
   const db = await fdbAsync();
-  if (!db) throw new Error("Khong the xac thuc Firebase de dong bo cu dan.");
+  if (!db) throw new Error("Khong the ket noi Firebase de dong bo cu dan.");
 
   try {
     const col = collection(db, "rooms", rid, "residents");
@@ -254,8 +309,10 @@ async function _pushOneResidentRaw(it, roomId = getRoomId()) {
         : (currentIdx >= 0 ? currentIdx : currentRows.length),
     };
     const id = normalized?.id || docIdFromResident(normalized || {});
-    await setDoc(doc(col, id), { ...normalized, _deleted: false, updatedAt: nowIso() }, { merge: true });
+    const pushedAt = normalized.updatedAt || nowIso();
+    await setDoc(doc(col, id), { ...stripLocalOnly(normalized), _deleted: false, updatedAt: pushedAt }, { merge: true });
     const del = getDeletedSet(); if (del.delete(id)) saveDeletedSet(del);
+    clearPendingForResident(id, pushedAt);
     touchRoomTimestamp(rid);
   } catch (e) {
     console.warn("[room] _pushOneResidentRaw failed:", e?.message || e);
@@ -267,17 +324,59 @@ async function _pushHistoryAllRaw(roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid) return;
   const db = await fdbAsync();
-  if (!db) throw new Error("Khong the xac thuc Firebase de dong bo lich su.");
+  if (!db) throw new Error("Khong the ket noi Firebase de dong bo lich su.");
 
   try {
     // luôn backup local (giữ 5 bản) trước khi đẩy
     try { saveBackupLocal(5); } catch (e) { console.warn("[backup] skip:", e?.message || e); }
 
-    const historyObj = getJSON(KEYS.history, {});
-    await setDoc(historyDocRef(db, rid), { history: historyObj, updatedAt: nowIso() }, { merge: true });
+    const localHistory = getJSON(KEYS.history, {});
+    const baseHistory = getJSON(KEY_LAST_SYNCED_HISTORY, {});
+    
+    // Tìm các tháng có thay đổi giữa local và base
+    const changedMonths = [];
+    const allMonths = new Set([...Object.keys(localHistory), ...Object.keys(baseHistory)]);
+    for (const m of allMonths) {
+      if (JSON.stringify(localHistory[m] || []) !== JSON.stringify(baseHistory[m] || [])) {
+        changedMonths.push(m);
+      }
+    }
+
+    let finalMergedObj = { ...localHistory };
+
+    // Chỉ gọi transaction nếu có tháng nào bị thay đổi
+    if (changedMonths.length > 0) {
+      await runTransaction(db, async (transaction) => {
+        const remoteSnapshots = {};
+        
+        // 1. Đọc tất cả các tháng bị thay đổi từ thư mục history_v2 mới
+        for (const month of changedMonths) {
+          const docRef = doc(db, "rooms", rid, "history_v2", month);
+          const sfDoc = await transaction.get(docRef);
+          remoteSnapshots[month] = sfDoc.exists() ? (sfDoc.data()?.history || []) : [];
+        }
+        
+        // 2. Gộp 3 chiều và Ghi lại
+        for (const month of changedMonths) {
+          const base = { [month]: baseHistory[month] || [] };
+          const local = { [month]: localHistory[month] || [] };
+          const remote = { [month]: remoteSnapshots[month] };
+          
+          const mergedObj = mergeHistoryObjects(base, local, remote);
+          finalMergedObj[month] = mergedObj[month] || [];
+          
+          const docRef = doc(db, "rooms", rid, "history_v2", month);
+          transaction.set(docRef, { history: finalMergedObj[month], updatedAt: nowIso() }, { merge: true });
+        }
+      });
+    }
+
+    // cập nhật local sau khi gộp
+    setJSON(KEYS.history, finalMergedObj);
 
     // sau push thành công -> cập nhật base cho merge lần sau
-    setJSON(KEY_LAST_SYNCED_HISTORY, historyObj);
+    setJSON(KEY_LAST_SYNCED_HISTORY, finalMergedObj);
+    clearHistoryPending();
 
     touchHistoryLocal(); // đánh dấu local vừa sync
     touchRoomTimestamp(rid);
@@ -349,6 +448,26 @@ export async function pushMonthPtr(roomId = getRoomId()) {
   });
 }
 
+export function hasPendingRoomChanges() {
+  const residentPending = listResidents().some((row) => !!row.__pendingSync);
+  return residentPending || hasHistoryPending();
+}
+
+export async function pushPendingRoomChanges(roomId = getRoomId()) {
+  const rid = String(roomId || "").trim();
+  if (!rid) return { residents: 0, history: false };
+  let residents = 0;
+  const pendingRows = listResidents().filter((row) => !!row.__pendingSync);
+  for (const row of pendingRows) {
+    await pushOneResident(row, rid);
+    residents += 1;
+  }
+  const history = hasHistoryPending();
+  if (history) await pushHistoryAll(rid);
+  if (residents || history) await pushMonthPtr(rid);
+  return { residents, history };
+}
+
 /* ================= Realtime subscribe ================= */
 let unsubResidents = null;
 let unsubMeta = null;
@@ -399,120 +518,135 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
     }
     if (!isSubbed) return;
 
+    let remoteMonth = "";
+    try {
+      const metaSnap = await getDoc(metaDocRef(db, rid));
+      if (metaSnap.exists()) {
+        remoteMonth = String(metaSnap.data()?.month || "");
+        const localMonth = getStr(KEYS.month, "");
+        if (remoteMonth >= localMonth) {
+          setStr(KEYS.month, remoteMonth);
+        }
+      }
+    } catch (e) {
+      console.warn("[room] Initial getDoc meta failed:", e);
+    }
+
     // 1) Residents
     const colRef = collection(db, "rooms", rid, "residents");
-  unsubResidents = onSnapshot(colRef, (qsnap) => {
+    unsubResidents = onSnapshot(colRef, (qsnap) => {
+      try {
+        const localMonth = getStr(KEYS.month, "");
+        if (remoteMonth && remoteMonth < localMonth) {
+          console.warn(`[room] skip applying remote residents snapshot because remote month ${remoteMonth} < local month ${localMonth}`);
+          return;
+        }
+
+        const live = [];
+        qsnap.forEach(d => {
+          const data = d.data();
+          // Bỏ qua nếu có cờ _deleted (tương thích cũ)
+          if (!data._deleted) {
+            live.push({ ...data, id: data.id || data.residentId || d.id, residentId: data.residentId || data.id || d.id });
+          }
+        });
+        const liveKeys = new Set(live.map(r => residentIdentity(r)));
+        const delSet = getDeletedSet();
+
+        // Cập nhật delSet: nếu server đã xoá thật thì gỡ khỏi hàng chờ
+        let changedDelSet = false;
+        delSet.forEach(id => {
+          if (!liveKeys.has(id) && qsnap.docs.length > 0) {
+            delSet.delete(id);
+            changedDelSet = true;
+          }
+        });
+        if (changedDelSet) saveDeletedSet(delSet);
+
+        const curr = getJSON(KEYS.current, []) || [];
+        
+        const updated = curr.filter(it => {
+          const id = residentIdentity(it);
+          if (delSet.has(id)) return false; 
+          if (it.__pendingSync) return true;
+
+          // Tránh snapshot rỗng tạm thời xoá sạch dữ liệu local
+          if (qsnap.empty && curr.length > 0) return true;
+
+          if (id && !liveKeys.has(id)) {
+            // Chỉ xoá khỏi local khi nó đã từng được sync thành công lên server 
+            if (it.isSynced) return false;
+            return true; // Chưa từng sync thành công thì giữ lại
+          }
+          return true;
+        });
+
+        const filteredLive = live.filter(r => !delSet.has(residentIdentity(r)));
+
+        // Merge và dedupe
+        const merged = mergeResidentRows(updated, filteredLive);
+        setJSON(KEYS.current, merged);
+        notify();
+      } catch (e) {
+        console.warn("[room] onSnapshot residents failed:", e?.message || e);
+        emitRoomError(e);
+      }
+    }, (err) => {
+      console.warn("[room] onSnapshot residents error:", err?.message || err);
+      emitRoomError(err);
+    });
+
+    // 2) Month pointer
+    unsubMeta = onSnapshot(metaDocRef(db, rid), (dsnap) => {
+      try {
+        if (dsnap.exists()) {
+          const meta = dsnap.data() || {};
+          if (meta.month != null) {
+            remoteMonth = String(meta.month);
+            const localMonth = getStr(KEYS.month, "");
+            if (remoteMonth >= localMonth) {
+              setStr(KEYS.month, remoteMonth);
+              notify();
+            } else {
+              console.warn(`[room] remote month ${remoteMonth} is older than local month ${localMonth}, skip downgrade.`);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[room] onSnapshot meta failed:", e?.message || e);
+        emitRoomError(e);
+      }
+    }, (err) => {
+      console.warn("[room] onSnapshot meta error:", err?.message || err);
+      emitRoomError(err);
+    });
+
+  // 3) History V2 (MERGE 3-CHIỀU an toàn)
+  unsubHistory = onSnapshot(collection(db, "rooms", rid, "history_v2"), (qsnap) => {
     try {
-      const live = [];
+      const remoteHistory = {};
       qsnap.forEach(d => {
-        const data = d.data();
-        // Bỏ qua nếu có cờ _deleted (tương thích cũ)
-        if (!data._deleted) {
-          live.push({ ...data, id: data.id || data.residentId || d.id, residentId: data.residentId || data.id || d.id });
+        const monthData = d.data()?.history;
+        if (Array.isArray(monthData)) {
+          remoteHistory[d.id] = monthData;
         }
       });
-      const liveKeys = new Set(live.map(r => residentIdentity(r)));
-      const delSet = getDeletedSet();
 
-      // Cập nhật delSet: nếu server đã xoá thật thì gỡ khỏi hàng chờ
-      let changedDelSet = false;
-      delSet.forEach(id => {
-        if (!liveKeys.has(id) && qsnap.docs.length > 0) {
-          delSet.delete(id);
-          changedDelSet = true;
-        }
-      });
-      if (changedDelSet) saveDeletedSet(delSet);
-
-      const curr = getJSON(KEYS.current, []) || [];
+      const localHistory = getJSON(KEYS.history, {});
+      const baseHistory = getJSON(KEY_LAST_SYNCED_HISTORY, {});
       
-      const updated = curr.filter(it => {
-        const id = residentIdentity(it);
-        if (delSet.has(id)) return false; 
-        if (id && !liveKeys.has(id)) return false;
-        return true;
-      });
-
-      const filteredLive = live.filter(r => !delSet.has(residentIdentity(r)));
-
-      // Merge và dedupe
-      const merged = dedupeRows(updated.concat(filteredLive));
-      setJSON(KEYS.current, merged);
+      const finalMergedObj = mergeHistoryObjects(baseHistory, localHistory, remoteHistory);
+      
+      setJSON(KEYS.history, finalMergedObj);
+      setJSON(KEY_LAST_SYNCED_HISTORY, finalMergedObj);
+      
       notify();
     } catch (e) {
-      console.warn("[room] onSnapshot residents failed:", e?.message || e);
+      console.warn("[room] onSnapshot history_v2 failed:", e?.message || e);
       emitRoomError(e);
     }
   }, (err) => {
-    console.warn("[room] onSnapshot residents error:", err?.message || err);
-    emitRoomError(err);
-  });
-
-  // 2) Month pointer
-  unsubMeta = onSnapshot(metaDocRef(db, rid), (dsnap) => {
-    try {
-      if (dsnap.exists()) {
-        const meta = dsnap.data() || {};
-        if (meta.month != null) {
-          setStr(KEYS.month, String(meta.month));
-          notify();
-        }
-      }
-    } catch (e) {
-      console.warn("[room] onSnapshot meta failed:", e?.message || e);
-      emitRoomError(e);
-    }
-  }, (err) => {
-    console.warn("[room] onSnapshot meta error:", err?.message || err);
-    emitRoomError(err);
-  });
-
-  // 3) History (ưu tiên bản local nếu vừa cập nhật; tránh remote rỗng đè local; MERGE 3-CHIỀU)
-  unsubHistory = onSnapshot(historyDocRef(db, rid), (dsnap) => {
-    try {
-      if (!dsnap.exists()) return;
-      const hdoc = dsnap.data() || {};
-      const remote = hdoc.history && typeof hdoc.history === "object" ? hdoc.history : null;
-      if (remote == null) return;
-
-      const remoteUpdatedAt = Date.parse(hdoc.updatedAt || 0) || 0;
-      const localTouch = getHistoryTouch();
-      const localObj = getJSON(KEYS.history, {}) || {};
-      const baseObj  = getJSON(KEY_LAST_SYNCED_HISTORY, {}) || {};
-
-      const localHasData  = localObj && Object.keys(localObj).length > 0;
-      const remoteIsEmpty = !remote || Object.keys(remote).length === 0;
-
-      // 1) Nếu local vừa update gần hơn -> KHÔNG đè bằng remote cũ
-      if (localTouch && localTouch > remoteUpdatedAt) {
-        notify();
-        return;
-      }
-
-      // 2) Không cho remote rỗng đè khi local đang có dữ liệu
-      if (remoteIsEmpty && localHasData) {
-        console.warn("[room] skip applying empty remote history because local has data");
-        notify();
-        return;
-      }
-
-      // 3) Hợp nhất 3-chiều: base (lastSynced) + local + remote
-      const merged = mergeHistoryObjects(baseObj, localObj, remote);
-
-      // 4) Ghi lại local & base nếu có thay đổi
-      const before = JSON.stringify(localObj);
-      const after  = JSON.stringify(merged);
-      if (before !== after) {
-        setJSON(KEYS.history, merged);
-        setJSON(KEY_LAST_SYNCED_HISTORY, merged); // cập nhật base
-      }
-      notify();
-    } catch (e) {
-      console.warn("[room] onSnapshot history failed:", e?.message || e);
-      emitRoomError(e);
-    }
-  }, (err) => {
-    console.warn("[room] onSnapshot history error:", err?.message || err);
+    console.warn("[room] onSnapshot history_v2 error:", err?.message || err);
     emitRoomError(err);
   });
 
@@ -528,20 +662,12 @@ export function subscribeRoom(onRemoteChange, explicitRoomId) {
 export async function joinRoom(roomId) {
   const rid = String(roomId || "").trim();
   if (!rid) return 0;
-  const db = await fdbAsync();
-  if (!db) throw new Error("Khong the xac thuc Firebase de tham gia phong.");
 
   try {
-    const snap = await getDocs(collection(db, "rooms", rid, "residents"));
-    const rows = [];
-    snap.forEach((d) => {
-      const data = d.data() || {};
-      rows.push({ ...data, id: data.id || data.residentId || d.id, residentId: data.residentId || data.id || d.id });
-    });
-    setJSON(KEYS.current, dedupeRows(rows));
     setStr(KEYS.roomId, rid);
+    const snap = await pullRoomToLocal(rid);
     subscribeRoom(null, rid);
-    return rows.length;
+    return safeArray(snap.current).length;
   } catch (e) {
     console.warn("[room] joinRoom failed:", e?.message || e);
     throw e;
@@ -553,7 +679,7 @@ export async function fetchRoomSnapshot(roomId = getRoomId()) {
   const rid = String(roomId || "").trim();
   if (!rid) throw new Error("Chua vao phong.");
   const db = await fdbAsync();
-  if (!db) throw new Error("Khong the xac thuc Firebase de tai du lieu phong.");
+  if (!db) throw new Error("Khong the ket noi Firebase de tai du lieu phong.");
 
   const residentsSnap = await getDocs(collection(db, "rooms", rid, "residents"));
   const residents = [];
@@ -563,12 +689,23 @@ export async function fetchRoomSnapshot(roomId = getRoomId()) {
     residents.push({ ...data, id: data.id || data.residentId || d.id, residentId: data.residentId || data.id || d.id });
   });
 
+  // Lấy bản Backup cũ từ history/all (Fallback)
   const historySnap = await getDocs(collection(db, "rooms", rid, "history"));
   let history = {};
   historySnap.forEach((d) => {
     if (d.id !== "all") return;
     const data = d.data() || {};
     history = data.history && typeof data.history === "object" ? data.history : {};
+  });
+
+  // Lấy các mảnh đã chia từ history_v2 và ghi đè/gộp vào bản cũ
+  const historyV2Snap = await getDocs(collection(db, "rooms", rid, "history_v2"));
+  historyV2Snap.forEach((d) => {
+    const data = d.data() || {};
+    const monthData = data.history;
+    if (Array.isArray(monthData)) {
+      history[d.id] = monthData;
+    }
   });
 
   const metaSnap = await getDocs(collection(db, "rooms", rid, "meta"));
@@ -589,16 +726,38 @@ export async function fetchRoomSnapshot(roomId = getRoomId()) {
 
 export async function pullRoomToLocal(roomId = getRoomId()) {
   const snap = await fetchRoomSnapshot(roomId);
-  setJSON(KEYS.current, snap.current || []);
+  const localMonth = getStr(KEYS.month, "");
+  
+  if (snap.month) {
+    if (snap.month >= localMonth) {
+      setStr(KEYS.month, snap.month);
+    } else {
+      console.warn(`[room] pullRoomToLocal: remote month ${snap.month} is older than local month ${localMonth}, skip downgrade.`);
+    }
+  }
+  
+  const effectiveMonth = snap.month || localMonth;
+  if (effectiveMonth >= localMonth) {
+    const localCurrent = getJSON(KEYS.current, []) || [];
+    const mergedCurrent = mergeResidentRows(localCurrent, snap.current || []);
+    setJSON(KEYS.current, mergedCurrent);
+  } else {
+    console.warn(`[room] pullRoomToLocal: skip merging residents because remote month ${snap.month} < local month ${localMonth}`);
+  }
+  
   setJSON(KEYS.history, snap.history || {});
-  if (snap.month) setStr(KEYS.month, snap.month);
-  return snap;
+  return { ...snap, current: getJSON(KEYS.current, []) };
 }
 
 export function unsubscribeRoom() {
   if (unsubResidents) { try { unsubResidents(); } catch {} unsubResidents = null; }
   if (unsubMeta)      { try { unsubMeta(); }      catch {} unsubMeta = null; }
   if (unsubHistory)   { try { unsubHistory(); }   catch {} unsubHistory = null; }
+}
+
+export function disconnectRoomRuntime() {
+  unsubscribeRoom();
+  try { pushQueue.pause(); } catch {}
 }
 
 /** Rời phòng: hủy listener + xóa sạch dữ liệu cục bộ (tránh chồng chéo khi vào phòng khác) */
@@ -613,4 +772,5 @@ export function leaveRoom() {
   saveDeletedSet(new Set()); // KEY_DELETED
   setJSON(KEY_LAST_SYNCED_HISTORY, {});
   localStorage.removeItem(KEY_HISTORY_TOUCH);
+  localStorage.removeItem(KEY_HISTORY_PENDING);
 }

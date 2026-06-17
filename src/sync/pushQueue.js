@@ -49,6 +49,12 @@ class QItem {
     this.enqueuedAt = now();
     this.retries = 0;
     this.nextDelay = 0;
+
+    // Deferred promise để thông báo kết quả cho caller
+    this.promise = new Promise((resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+    });
   }
 }
 
@@ -108,6 +114,12 @@ class PushQueue {
 
     if (!this.pendingMap.has(key)) {
       this.order.push(key);
+    } else {
+      const existing = this.pendingMap.get(key);
+      if (existing) {
+        // Kết nối promise: Khi item mới hoàn thành (thành công/thất bại), item cũ cũng được giải phóng.
+        item.promise.then(existing.resolve, existing.reject);
+      }
     }
     this.pendingMap.set(key, item);
 
@@ -172,8 +184,12 @@ class PushQueue {
     try {
       await item.run();
       this.log(`✓ done: ${item.label || key}`);
+      item.resolve();
     } catch (err) {
-      // xử lý retry
+      // reject ngay lập tức khi gặp lỗi lần đầu để không block giao diện chờ đợi
+      item.reject(err);
+
+      // xử lý retry âm thầm ở chế độ nền
       const canRetry = item.retries < this.cfg.maxRetries;
       if (!isOnline()) {
         this.warn(`⚠ offline, queue paused`);

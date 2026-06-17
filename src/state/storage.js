@@ -26,7 +26,13 @@ export const getJSON = (k, def) => {
   }
 };
 export const setJSON = (k, v) => {
-  try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
+  try {
+    localStorage.setItem(k, JSON.stringify(v));
+    if (k === KEYS.history) {
+      localStorage.setItem("__history_pending_sync", "1");
+      localStorage.setItem("__history_updated_at", String(Date.now()));
+    }
+  } catch {}
 };
 
 /* Number (an toàn hơn Number(localStorage.getItem())) */

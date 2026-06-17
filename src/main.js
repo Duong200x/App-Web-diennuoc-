@@ -4,13 +4,51 @@ import "./style.css";
 import { startRouter } from "./router.js";
 import { rolloverMonth } from "./state/history.js";
 import { initFirebase } from "./sync/firebase.js";
-import { isInRoom, pullRoomToLocal, subscribeRoom } from "./sync/room.js";
+import {
+  disconnectRoomRuntime,
+  isInRoom,
+  pullRoomToLocal,
+  pushPendingRoomChanges,
+  subscribeRoom,
+} from "./sync/room.js";
+import { pushQueue } from "./sync/pushQueue.js";
 import { ensureResidentIds, recomputePrevDebtFromHistory } from "./state/readings.js";
 import { saveBackupLocal } from "./state/backup.js";
 import { showToast } from "./ui/toast.js";
 import "./ui/syncIndicator.js";
 import "./routes/backupOverlay.js";
 import "./ui/backupFab.js";
+
+function setBootMessage(message) {
+  const el = document.getElementById("boot-message");
+  if (el && message) el.textContent = message;
+}
+
+function hideBootScreen() {
+  const el = document.getElementById("boot-screen");
+  if (!el) return;
+  el.classList.add("hide");
+  setTimeout(() => { try { el.remove(); } catch {} }, 250);
+}
+
+async function waitForBootPull(pullPromise, timeoutMs = 3000) {
+  let timedOut = false;
+  const guardedPull = pullPromise.then((snap) => {
+    if (timedOut) {
+      try { ensureResidentIds(); } catch {}
+      try { recomputePrevDebtFromHistory(); } catch {}
+      try { window.__forceRender?.(); } catch {}
+    }
+    return snap;
+  });
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => {
+      timedOut = true;
+      reject(new Error("Tai database cham, tam mo du lieu tren may."));
+    }, timeoutMs);
+  });
+  return Promise.race([guardedPull, timeout]);
+}
 
 /* ========= Theme management ========= */
 const THEME_KEY = "app-theme";
@@ -120,6 +158,7 @@ function bindHomeHardRefresh() {
 
 /* ========= Khởi động ứng dụng ========= */
 window.addEventListener("DOMContentLoaded", async () => {
+  setBootMessage("Đang kiểm tra dữ liệu trên máy...");
   const app = document.getElementById("app");
   bindHomeHardRefresh();
 
@@ -136,6 +175,51 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   };
 
+  let roomSyncing = false;
+  const isOnlineNow = () => (typeof navigator === "undefined" || navigator.onLine !== false);
+  const setRoomStatus = (status, detail = {}) => {
+    window.__roomSyncStatus = { status, ...detail, at: Date.now() };
+    try {
+      window.dispatchEvent(new CustomEvent("room:sync-status", { detail: window.__roomSyncStatus }));
+    } catch {}
+  };
+  const onRemoteRoomChange = () => {
+    try { ensureResidentIds(); } catch {}
+    try { recomputePrevDebtFromHistory(); } catch {}
+    window.__forceRender();
+  };
+  const syncRoomOnline = async ({ boot = false } = {}) => {
+    if (!isInRoom()) {
+      if (isOnlineNow()) pushQueue.resume();
+      setRoomStatus("local");
+      return false;
+    }
+    if (!isOnlineNow()) { setRoomStatus("local", { pending: true }); return false; }
+    if (roomSyncing) return false;
+    roomSyncing = true;
+    setRoomStatus("syncing");
+    try {
+      try { saveBackupLocal(3); } catch {}
+      if (boot) setBootMessage("Đang tải dữ liệu mới nhất từ database...");
+      await pullRoomToLocal();
+      try { ensureResidentIds(); } catch {}
+      try { recomputePrevDebtFromHistory(); } catch {}
+      pushQueue.resume();
+      await pushPendingRoomChanges();
+      subscribeRoom(onRemoteRoomChange);
+      setRoomStatus("synced");
+      window.__forceRender();
+      return true;
+    } catch (err) {
+      console.warn("[main] room sync skipped:", err?.message || err);
+      setRoomStatus("pending", { message: err?.message || String(err) });
+      if (boot) setBootMessage("Đang mở dữ liệu trên máy...");
+      return false;
+    } finally {
+      roomSyncing = false;
+    }
+  };
+
   // Start
   try { ensureResidentIds(); } catch (err) {
     console.warn("[main] ensureResidentIds failed:", err?.message || err);
@@ -143,10 +227,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (isInRoom() && (typeof navigator === "undefined" || navigator.onLine !== false)) {
     try {
       try { saveBackupLocal(3); } catch {}
-      await pullRoomToLocal();
+      setBootMessage("Đang tải dữ liệu mới nhất từ database...");
+      await waitForBootPull(syncRoomOnline({ boot: true }), 3000);
       try { ensureResidentIds(); } catch {}
     } catch (err) {
-      console.warn("[main] online-first room pull skipped:", err?.message || err);
+      console.warn("[main] online-first room pull skipped or timed out:", err?.message || err);
+      setBootMessage("Đang mở dữ liệu trên máy...");
+      // Ensure we render with local data
+      try { ensureResidentIds(); } catch {}
     }
   }
   rolloverMonth().catch((err) => {
@@ -155,7 +243,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   try { recomputePrevDebtFromHistory(); } catch {}
   
   // Chỉ gọi startRouter MỘT LẦN DUY NHẤT
+  setBootMessage("Đang chuẩn bị giao diện...");
   startRouter(app);
+  requestAnimationFrame(hideBootScreen);
 
   // Firebase realtime
   initFirebase();
@@ -180,7 +270,22 @@ window.addEventListener("DOMContentLoaded", async () => {
     startRoomSub();
   }, 1200);
   // Khi cửa sổ lấy lại focus cũng kiểm tra
-  window.addEventListener("focus", startRoomSub);
+  window.addEventListener("focus", () => {
+    startRoomSub();
+    syncRoomOnline();
+  });
+  window.addEventListener("online", () => {
+    startRoomSub();
+    syncRoomOnline();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      disconnectRoomRuntime();
+      setRoomStatus(isInRoom() ? "local" : "local", { paused: true });
+      return;
+    }
+    syncRoomOnline();
+  });
 
   // Theme toggle
   const themeBtn = document.getElementById("theme-toggle");
@@ -212,7 +317,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Log trạng thái mạng
-  window.addEventListener("online",  () => console.log("Đang online, sẽ tự đồng bộ."));
+  window.addEventListener("online",  () => {
+    console.log("Đang online, sẽ tự đồng bộ.");
+    syncRoomOnline();
+  });
   window.addEventListener("offline", () => console.log("Mất mạng, ghi tạm offline."));
 
   let lastRoomErr = { msg: "", at: 0 };

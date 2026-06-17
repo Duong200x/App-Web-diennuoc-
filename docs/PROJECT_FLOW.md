@@ -56,12 +56,15 @@ Thu muc sinh ra hoac khong nen xem la source chinh:
 3. Neu chay native Capacitor, dong bo `StatusBar`.
 4. Neu chay web, dang ky PWA service worker qua `virtual:pwa-register`.
 5. Neu URL chua co hash, chuyen ve `#/list`.
-6. Goi `rolloverMonth()` de tu dong chot thang neu `savedMonth` khac thang hien tai.
-7. Goi `recomputePrevDebtFromHistory()` de dong bo no cu hien tai tu lich su.
-8. Goi `startRouter(app)`.
-9. Goi `initFirebase()`.
-10. Neu dang co `roomId`, bat dau `subscribeRoom()` de nhan thay doi realtime.
-11. Gan listener cho theme toggle, hamburger menu, online/offline log va loi sync room.
+6. Hien `#boot-screen` trong `index.html` ngay tu dau de tranh man hinh trang khi doc database cham.
+7. Goi `ensureResidentIds()` de migration mem id cho current/history local.
+8. Neu dang co `roomId` va online, tao backup local nho truoc, roi `pullRoomToLocal()` de lay database ve local, merge pending va day pending truoc khi an boot loading. Neu pull/push loi thi fallback local va giu pending.
+9. Goi `rolloverMonth()` de tu dong chot thang neu `savedMonth` khac thang hien tai.
+10. Goi `recomputePrevDebtFromHistory()` de dong bo no cu hien tai tu lich su.
+11. Goi `startRouter(app)` mot lan duy nhat, sau do an `#boot-screen`.
+12. Goi `initFirebase()`.
+13. Neu dang co `roomId`, bat dau `subscribeRoom()` de nhan thay doi realtime.
+14. Gan listener cho theme toggle, hamburger menu, online/offline log va loi sync room.
 
 `window.__forceRender()` duoc gan trong `main.js`. Ham nay recompute no cu, sau do dispatch `app:force-render` de router render lai man hinh hien tai.
 
@@ -237,29 +240,31 @@ Online-first startup:
 
 ```text
 Neu co internet va co roomId:
-1. Xac thuc Firebase.
-2. Pull database hien tai truoc khi cho user thao tac.
-3. Ghi database ve local cache.
-4. Neu local co pending offline changes/snapshot chua dong bo, hien canh bao cho user.
-5. Chi flush pending sau khi da pull database moi nhat va review/merge neu co khac biet.
-6. Render app voi du lieu da dong bo.
+1. Hien man hinh boot loading de user biet app dang doc du lieu.
+2. Goi `ensureAuth()`: neu Firebase auth session con thi chay thang, neu chua co session thi hoi mat khau mot lan.
+3. Tao backup local nho truoc khi pull.
+4. Pull database hien tai bang `pullRoomToLocal()` va merge voi local pending.
+5. Day lai local pending bang `pushPendingRoomChanges()`.
+6. Bat realtime `subscribeRoom()`.
+7. An boot loading va hien trang thai "Da dong bo".
 ```
 
 Neu khong co internet:
 
 ```text
 1. App duoc phep mo bang local cache/snapshot gan nhat.
-2. Moi thao tac sua phai luu local va ghi pending operation/snapshot.
-3. UI phai bao ro "offline - thay doi chua dong bo".
-4. Khong hien thong bao thanh cong dong bo.
+2. Moi thao tac sua phai luu local va gan pending (`__pendingSync` cho resident, `__history_pending_sync` cho history).
+3. Khong cho push treo UI; push offline chi enqueue/giu pending roi tra ve.
+4. Khi co mang lai, app tu pull database truoc, merge pending, roi moi push pending.
 ```
 
 Sau moi thao tac online:
 
 ```text
 1. Update local de UI phan hoi nhanh.
-2. Ghi operation vao pending queue ben vung.
-3. Push len Firestore ngay.
+2. Gan pending local.
+3. Neu app dang visible va online thi push len Firestore ngay.
+4. Neu offline/an app/push loi thi giu pending; user co the bam "Day lai du lieu" trong RoomView.
 4. Push thanh cong thi xoa pending operation.
 5. Push that bai do mat mang thi giu pending va snapshot.
 ```
@@ -355,13 +360,13 @@ Ham chinh:
 
 - `listResidents()`: doc `currentReadings`, normalize tung row.
 - `saveResidents(arr)`: normalize va luu lai, gan `__order`.
-- `addResident()`: them cu dan, set ngay hien tai, detect `isNew`.
-- `updateInline()`: sua nhanh chi so moi, rang buoc `new >= old`.
-- `updateFull()`: sua day du co rang buoc `new >= old`.
-- `updateFullAdmin()`: sua day du bo rang buoc `new >= old`, dung trong man Quan ly.
-- `addAdvance()`: cong tam ung, clamp khong vuot `total`, neu du thi set `paid=true`.
-- `setPaid()`: chi doi trang thai paid/paidAt, khong tu sua `advance`.
-- `setPrevDebt()`: sua no cu.
+- `addResident()`: them cu dan, set ngay hien tai, detect `isNew`, gan `updatedAt` va `__pendingSync`.
+- `updateInline()`: sua nhanh chi so moi, rang buoc `new >= old`, gan `updatedAt` va `__pendingSync`.
+- `updateFull()`: sua day du co rang buoc `new >= old`, gan `updatedAt` va `__pendingSync`.
+- `updateFullAdmin()`: sua day du bo rang buoc `new >= old`, dung trong man Quan ly, gan `updatedAt` va `__pendingSync`.
+- `addAdvance()`: cong tam ung, clamp khong vuot `total`, neu du thi set `paid=true`, gan `updatedAt` va `__pendingSync`.
+- `setPaid()`: chi doi trang thai paid/paidAt, khong tu sua `advance`, gan `updatedAt` va `__pendingSync`.
+- `setPrevDebt()`: sua no cu, gan `updatedAt` va `__pendingSync`.
 - `removeResident()`: xoa local va tra ve ban ghi da xoa de caller sync.
 
 Man hinh lien quan:
@@ -397,10 +402,11 @@ Tong tien:
 
 Hanh dong trong bang:
 
-- Mark paid: `setPaid()`, sau do neu in room thi `pushOneResident()`.
-- Thu tam ung: `addAdvance()`.
-- Sua so da thu: `updateFull({ advance, paid })`.
-- Chinh sua nhanh chi so: `updateInline()`.
+- Mark paid: `setPaid()`, render local ngay, sau do neu in room thi `pushOneResident()` chay nen.
+- Thu tam ung: `addAdvance()`, render local ngay, sau do neu in room thi `pushOneResident()` chay nen.
+- Sua so da thu: `updateFull({ advance, paid })`, render local ngay, sau do neu in room thi `pushOneResident()` chay nen.
+- Chinh sua nhanh chi so: `updateInline()`, render local ngay, sau do neu in room thi `pushOneResident()` chay nen.
+- Neu push nen loi, UI giu du lieu tren may va toast "Da luu tren may, chua dong bo database". Khong rollback local tu dong.
 - Quan ly: route `#/manage/<residentKey>`.
 - Chi tiet: route `#/detail/<residentKey>`.
 
@@ -590,14 +596,15 @@ Firebase init:
 
 - Config lay tu bien moi truong `VITE_FB_*`.
 - Firestore bat IndexedDB persistence, uu tien multi-tab.
-- Auth dung email co dinh `quanly@diennuoc.com`, mat khau nhap qua prompt.
-- Neu user huy prompt mat khau, `ensureAuth()` reject va toan bo tac vu lien quan den room phai dung lai. Khong duoc tiep tuc push/join/create/delete room trong trang thai chua xac thuc.
+- `ensureAuth()` dung Firebase Auth voi email noi bo `quanly@diennuoc.com`.
+- Neu Firebase da co `auth.currentUser` tu lan dang nhap truoc thi sync/tai room/push room khong hoi lai mat khau.
+- Neu chua co auth session (lan dau vao phong, xoa app data, mat session, may moi) thi prompt mat khau mot lan. User huy prompt thi tac vu room dung lai, app fallback local va giu pending.
 
 Room structure tren Firestore:
 
 ```text
 rooms/{roomId}
-rooms/{roomId}/residents/{residentKey}
+rooms/{roomId}/residents/{residentIdentity}
 rooms/{roomId}/history/all
 rooms/{roomId}/meta/state
 ```
@@ -609,35 +616,54 @@ Public API chinh trong `room.js`:
 - `enterRoom(roomId, onRemoteChange)`
 - `leaveRoom()`
 - `subscribeRoom(onRemoteChange)`
+- `disconnectRoomRuntime()`
 - `pushOneResident(it)`
 - `pushAllToRoom()`
 - `pushDeleteResident(it)`
 - `pushHistoryAll()`
 - `pushMonthPtr()`
+- `pushPendingRoomChanges()`
+- `hasPendingRoomChanges()`
 
 Push queue:
 
 - Moi push chay qua `pushQueue`.
 - Queue coalesce theo key, chay tuan tu, retry khi loi, pause khi offline.
+- Khi app hidden/offline, push chi enqueue/giu pending va khong doi `drain()` de tranh treo UI.
+- Queue khong tu resume push khi online/visible. `main.js` phai `pullRoomToLocal()` truoc, sau do moi `pushQueue.resume()` va `pushPendingRoomChanges()`.
 - `syncIndicator.js` doc trang thai queue de hien chip dong bo.
 
 Residents sync:
 
-- Doc id la `residentKey`.
+- Doc id moi la `residentIdentity()` (`id/residentId` neu co, fallback `residentKey` cho du lieu cu).
 - Remote `_deleted` bi bo qua.
 - Local deleted set `__deleted_keys` giup tranh keo nguoi da xoa quay lai.
-- Khi onSnapshot, merge current local voi remote, dedupe theo residentKey, uu tien row co `updatedAt` moi hon.
+- Moi sua resident local trong `src/state/readings.js` phai gan `updatedAt` va `__pendingSync=true`.
+- `__pendingSync` chi la co local, khong day len Firestore.
+- Khi `pushOneResident()`/`pushAllToRoom()` thanh cong, xoa `__pendingSync` cho row do neu local khong co ban sua moi hon.
+- Khi onSnapshot hoac `pullRoomToLocal()`, merge current local voi remote theo `residentIdentity()`: row local dang `__pendingSync` duoc giu lai, remote chi de len row local khi local khong pending va `updatedAt` remote moi hon hoac bang.
+- `pushPendingRoomChanges()` day cac resident dang `__pendingSync`, sau do day history pending neu co, roi day month pointer.
 
 History sync:
 
 - History luu mot doc `history/all`.
 - Co local touch key `__history_updated_at` de tranh remote cu de len local vua sua.
+- Co local pending key `__history_pending_sync`; moi `setJSON(KEYS.history, ...)` danh dau history can dong bo.
 - Co base key `__last_synced_history` de merge 3 chieu.
+- Khi `pullRoomToLocal()`, neu history local dang pending thi merge local + remote bang `mergeHistoryObjects()` va giu pending de push lai. Neu local khong pending thi history remote co du lieu se thay history local; neu remote rong va local co du lieu thi giu local.
+- Khi history remote/onSnapshot duoc ap vao local, code phai clear `__history_pending_sync` neu thay doi do remote, khong phai do user sua local.
 - `mergeHistoryObjects(base, local, remote)` uu tien giu du lieu an toan:
   - `paid`: OR.
   - `advance`, `prevDebt`, snapshot tien: max.
   - chi so cong to: max.
   - string: uu tien local neu co.
+
+Runtime room reconnect:
+
+- `roomId` van luu trong localStorage de lan sau mo app tu dong noi lai, khong bat user nhap ma phong lai.
+- Khi app hidden/pause, goi `disconnectRoomRuntime()`: huy realtime listener va pause queue, nhung khong xoa `roomId`, khong xoa current/history/month.
+- Khi app visible/focus/online lai, `main.js` goi luong sync trung tam: backup local nho, `pullRoomToLocal()`, recompute, `pushPendingRoomChanges()`, roi `subscribeRoom()`.
+- Luong nay dam bao co mang thi pull database truoc roi moi push pending, giong nguyen tac pull truoc push.
 
 Leave room:
 
@@ -785,7 +811,7 @@ Android:
   - History, route detail/manage, recompute no va sync room phai uu tien `residentIdentity()` thay vi match truc tiep bang ten/khu.
 - Firestore residents doc moi dung `residentIdentity()` lam doc id. Doc cu theo `residentKey` van doc duoc; khong hard-delete doc cu tu dong khi rename vi co the gay mat du lieu neu nhieu user dang sync.
 - Doi `residentKey` se anh huong fallback legacy, import cu va dedupe; khong duoc bien no lai thanh nguon dinh danh chinh.
-- Khi app mo va dang o trong room, neu co mang thi main se tao backup local truoc, sau do `pullRoomToLocal()` de tai current/history/month tren database ve local truoc khi rollover/render. Neu auth bi huy hoac pull loi thi chi fallback local, khong crash.
+- Khi app mo va dang o trong room, neu co mang thi main se tao backup local truoc, sau do `pullRoomToLocal()` de tai current/history/month tren database ve local, merge pending va `pushPendingRoomChanges()` truoc khi an boot loading. Neu pull/push loi thi fallback local, giu pending va khong crash.
 - Snapshot offline trong man hinh backup khong duoc push thang len room. Nut dong bo snapshot phai theo luong:
   1. Pull database hien tai bang `fetchRoomSnapshot()`.
   2. Hien so sanh snapshot local/offline voi database.
@@ -822,6 +848,10 @@ Android:
 - 2026-05-14: Sau restore JSON trong ConfigView va sau import Excel trong ListView, chay `ensureResidentIds()` ngay de du lieu moi/du lieu cu co `id/residentId` truoc khi reload, render hoac sync.
 - 2026-05-14: Fix luong no history/current: helper tinh `carryRemaining`, snapshot history tinh lai `__total/__advance/__remaining` nhat quan, tick paid history set thu du va remaining 0, huy tick tra advance ve 0 neu truoc do tu thu du, sua/import thang cu lan truyen no qua cac thang sau bang `residentId`.
 - 2026-05-15: Dong bo dropdown o History/Form/Manage sang custom select giong ListView de tranh native select bi sai mau trong Android WebView va dam bao dark theme dung mau.
+- 2026-06-09: Them boot loading khi khoi dong de tranh man hinh trang luc doc database; chuyen mark paid/thu tam ung/sua so da thu/sua chi so nhanh sang local-first roi push nen; them `updatedAt` + `__pendingSync` cho resident local va merge room/pull khong cho remote cu de len row local dang cho dong bo.
+- 2026-06-09: Doi luong room noi bo thanh hoi mat khau mot lan khi chua co Firebase auth session, cac lan sau sync tu dong neu session con; app hidden thi pause runtime sync nhung giu `roomId`; khi mo/online lai tu pull database truoc, merge pending, roi moi push pending; them `__history_pending_sync`, `pushPendingRoomChanges()`, nut RoomView "Dong bo phong" va "Day lai du lieu".
+- 2026-06-09: Sửa loi treo dong bo (deadlock queue) bang cach await item.promise va reject ngay khi loi mang lan dau; fix loi mat du lieu local do snapshot merge bang cach them `isSynced: true` cho remote rows va chi cho phep xoa resident neu da tung duoc sync thanh cong; tu dong sync khi co mang lai qua window online event.
+- 2026-06-09: Sua loi mat du lieu khi thu tam ung va mat no cu do dong bo lech pha luc rollover: chan downgrade month pointer va chan merge du lieu residents tu remote thang cu len local thang moi trong `subscribeRoom` va `pullRoomToLocal`; cap nhat `updatedAt` moi va cờ `__pendingSync` trong `rolloverMonth`, `forceCarryOverToCurrentMonth`, `importHistoryMonth` va `recomputePrevDebtFromHistory`.
 
 ## Rule.md
 
@@ -881,3 +911,31 @@ For multi-step tasks, state a brief plan:
 3. [Step] â†’ verify: [check]
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 ```
+
+## Nhật ký sửa lỗi (Fixes)
+- **Fix lỗi: Sửa Nợ cũ (prevDebt) ở ManageView bị khôi phục lại khi load list.**
+  - **Lý do**: Hàm `recomputePrevDebtFromHistory` (chạy mỗi khi `ListView` mount) quét lịch sử và tự động tính lại nợ đè lên dữ liệu tạm thời.
+  - **Cách sửa**: 
+    1. Trong `readings.js`, thêm `overrideLatestHistoryRemaining(resident, newDebt)` để tìm bản ghi lịch sử tháng gần nhất và sửa trực tiếp `__remaining` = `newDebt` (đồng thời tắt `paid` nếu nợ > 0).
+    2. Trong `ManageView.js`, thu thập biến `historyChanged`. Nếu `isInRoom()`, gọi thêm `pushHistoryAll()` để đẩy lịch sử vừa sửa lên Firebase, giúp nợ mới sửa được lưu vĩnh viễn và đồng bộ.
+
+- **Fix lỗi: Kẹt số Tạm ứng khi huỷ tick Đã đóng và Race Condition đồng bộ lịch sử.**
+  - **Lý do**: Khi huỷ tick Đã đóng ở `ManageView.js`, ô tạm ứng không bị reset, làm `advance = total` dẫn đến nợ báo sai. Trong `room.js`, đẩy toàn bộ file lịch sử bằng `setDoc` dễ gây đè/mất dữ liệu nếu 2 thiết bị cùng bấm Lưu (Race Condition).
+  - **Cách sửa**:
+    1. Bổ sung sự kiện thay đổi của checkbox `Đã đóng` trong `ManageView.js`, tự động reset `#advance.value = ""` nếu unchecked.
+    2. Import `runTransaction` từ Firebase. Viết lại hàm `_pushHistoryAllRaw` trong `room.js` để dùng Transaction (Atomical update). Gộp (merge) an toàn 3 chiều bản lịch sử cũ ở local, bản remote đang có và bản local mới bằng `mergeHistoryObjects` trước khi push.
+
+- **Fix lỗi: Treo app màn hình trắng (loading) khi rớt mạng cục bộ (có WiFi, mất Internet).**
+  - **Lý do**: `fetchRoomSnapshot` không có cơ chế Timeout, chờ Firebase phản hồi vô tận.
+  - **Cách sửa**: Bọc hàm `syncRoomOnline({ boot: true })` trong `main.js` với `waitForBootPull(promise, 3000)`. Quá 3 giây sẽ từ chối kết nối mạng và cho phép app vào thẳng bằng dữ liệu Offline (Local Storage).
+
+- **Kiến trúc: Băm nhỏ lịch sử (Data Sharding) để tối ưu băng thông và tốc độ tải.**
+  - **Lý do**: File JSON lịch sử `history/all` phình to lên 24 tháng, dung lượng quá nặng khiến mỗi lần sửa/đồng bộ bị nghẽn băng thông.
+  - **Cách sửa**:
+    1. Giữ nguyên bộ nhớ đệm Offline là 1 file JSON thống nhất (`KEYS.history`) để duy trì độ trễ 0ms cho mọi tác vụ tra cứu, in ấn, tính tiền cũ.
+    2. Trong `room.js`, viết lại hàm `_pushHistoryAllRaw`. Sử dụng thuật toán Diffing: Chỉ so sánh và đẩy mảng lịch sử của **những tháng bị thay đổi** lên thư mục `history_v2/{month}` trên Firebase bằng Transaction. Tiết kiệm tối đa băng thông.
+    3. Trong `fetchRoomSnapshot` (luồng kéo dữ liệu), thiết lập Fallback: Tải "Bản nền" `history/all` phiên bản cũ và đắp thêm các "Mảnh vỡ" tải từ `history_v2` để ráp lại bản hoàn chỉnh. Tương thích chéo 100% với hệ thống cũ.
+
+- **Fix lỗi: File Excel CSV (Fallback) bị hỏng font Tiếng Việt trên máy tính Windows.**
+  - **Lý do**: Nếu thư viện ExcelJS thất bại (do thiết bị cũ/lỗi trình duyệt), app sẽ tự động "chữa cháy" xuất file `.csv`. Tuy nhiên file `.csv` chuẩn UTF-8 lại không được Microsoft Excel trên Windows nhận dạng đúng, gây biến dạng chữ Tiếng Việt.
+  - **Cách sửa**: Chèn thêm ký tự BOM vô hình `\uFEFF` vào đầu chuỗi nội dung CSV trong `src/export/excel.js` trước khi xuất file để ép Microsoft Excel luôn đọc dưới chuẩn Unicode UTF-8.

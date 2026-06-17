@@ -377,6 +377,21 @@ export function mount(el) {
     syncButton();
   };
 
+  const refreshLocalRows = () => {
+    all = listResidents();
+    current = applyFilter();
+    renderRows(current);
+  };
+
+  const pushResidentInBackground = (resident) => {
+    if (!isInRoom() || !resident) return;
+    pushOneResident(resident)
+      .then(() => { try { window.__forceRender?.(); } catch {} })
+      .catch((err) => {
+        showToast(`Đã lưu trên máy, chưa đồng bộ database: ${err?.message || err}`, "error");
+      });
+  };
+
   el.innerHTML = `
     <div class="container">
       <div class="card">
@@ -640,10 +655,9 @@ export function mount(el) {
         try {
           if (isInRoom()) await ensureAuth();
           await setPaid(oid, cb.checked);
-          if (isInRoom()) await pushOneResident(listResidents()[oid]);
-          all = listResidents();
-          current = applyFilter();
-          renderRows(current);
+          const saved = listResidents()[oid];
+          refreshLocalRows();
+          pushResidentInBackground(saved);
         } catch (e) {
           showToast("Lỗi cập nhật trạng thái thanh toán: " + (e?.message || e), "error");
           cb.checked = !cb.checked;
@@ -675,14 +689,15 @@ export function mount(el) {
         if (amount <= 0) { showToast("Số tiền không hợp lệ.", "error"); return; }
 
         try {
+          btn.disabled = true;
           if (isInRoom()) await ensureAuth();
           await addAdvance(oid, amount);
-          if (isInRoom()) await pushOneResident(listResidents()[oid]);
-          all = listResidents();
-          current = applyFilter();
-          renderRows(current);
+          const saved = listResidents()[oid];
+          refreshLocalRows();
+          pushResidentInBackground(saved);
         } catch (err) {
           showToast(err?.message || err, "error");
+          btn.disabled = false;
         }
       });
     });
@@ -702,15 +717,16 @@ export function mount(el) {
         if (raw == null) return;
         const val = Number(String(raw).replace(/[^\d]/g, "")) || 0;
         try {
+          btn.disabled = true;
           if (isInRoom()) await ensureAuth();
           const willPaid = val >= a.total;
           await updateFull(oid, { advance: val, paid: willPaid });
-          if (isInRoom()) await pushOneResident(listResidents()[oid]);
-          all = listResidents();
-          current = applyFilter();
-          renderRows(current);
+          const saved = listResidents()[oid];
+          refreshLocalRows();
+          pushResidentInBackground(saved);
         } catch (err) {
           showToast(err?.message || err, "error");
+          btn.disabled = false;
         }
       });
     });
@@ -806,19 +822,21 @@ export function mount(el) {
         });
 
         actions.querySelector(".btn-save").addEventListener("click", async () => {
+          const saveBtn = actions.querySelector(".btn-save");
           try {
+            saveBtn.disabled = true;
             if (isInRoom()) await ensureAuth();
             await updateInline(oid, {
               newElec: Number(inpE.value || 0),
               newWater: Number(inpW.value || 0),
             });
-            if (isInRoom()) await pushOneResident(listResidents()[oid]);
+            const saved = listResidents()[oid];
             hidePreview();
-            all = listResidents();
-            current = applyFilter();
-            renderRows(current);
+            refreshLocalRows();
+            pushResidentInBackground(saved);
           } catch (err) {
             showToast(err.message || err, "error");
+            saveBtn.disabled = false;
           }
         });
       });

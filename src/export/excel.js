@@ -202,7 +202,9 @@ export async function exportExcel(items, monthKey) {
     ].map(row => row.map(toCsvCell).join(",")).join("\n");
 
     const csvName = `dien_nuoc_${y}-${String(m).padStart(2, "0")}_fallback.csv`;
-    await saveTextSmart(csv, "text/csv", csvName);
+    // Thêm BOM (\uFEFF) để Microsoft Excel nhận diện đúng font tiếng Việt (UTF-8)
+    const finalCsv = "\uFEFF" + csv;
+    await saveTextSmart(finalCsv, "text/csv;charset=utf-8", csvName);
     alert("Xuất Excel không thành công (ExcelJS). Đã xuất file CSV thay thế (có tổng theo khu).");
   }
 }

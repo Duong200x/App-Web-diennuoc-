@@ -12,8 +12,8 @@ import {
   pushMonthPtr,      // đẩy KEYS.month
 } from "../sync/room.js";
 
-// (Moved to src/utils/normalize.js)
 const keyOf = residentIdentity;
+const nowIso = () => new Date().toISOString();
 
 /** dùng để đánh dấu đã áp lịch sử tháng trước vào tháng hiện tại (tránh cộng lặp) */
 const KEY_APPLIED_PREV_HISTORY_PREFIX = "__applied_prev_history_for__";
@@ -99,6 +99,8 @@ export async function rolloverMonth() {
       elecDate: "",
       waterDate: "",
       isNew: false,
+      updatedAt: nowIso(),
+      __pendingSync: true,
     };
   });
 
@@ -168,6 +170,8 @@ export async function forceCarryOverToCurrentMonth() {
       elecDate: "",
       waterDate: "",
       isNew: false,
+      updatedAt: nowIso(),
+      __pendingSync: true,
     };
   });
 
@@ -205,23 +209,23 @@ export function importHistoryMonth(monthKey /* 'YYYY-MM' */, rows) {
     const current = currByLegacyKey.get(residentKey(r));
     const id = r.residentId || r.id || current?.residentId || current?.id || "";
     return {
-    id: id || undefined,
-    residentId: id || undefined,
-    name: String(r.name || "").trim(),
-    address: String(r.address || "").trim(),
-    zone: r.zone || undefined,
-    oldElec: +r.oldElec || 0,
-    newElec: +r.newElec || 0,
-    oldWater: +r.oldWater || 0,
-    newWater: +r.newWater || 0,
-    prevDebt: Math.max(0, +r.prevDebt || 0),
-    advance: Math.max(0, +r.advance || 0),
-    paid: !!r.paid,
-    paidAt: r.paidAt ? String(r.paidAt) : "",
-    elecDate: r.elecDate ? String(r.elecDate) : "",
-    waterDate: r.waterDate ? String(r.waterDate) : "",
-    isNew: false,
-  };
+      id: id || undefined,
+      residentId: id || undefined,
+      name: String(r.name || "").trim(),
+      address: String(r.address || "").trim(),
+      zone: r.zone || undefined,
+      oldElec: +r.oldElec || 0,
+      newElec: +r.newElec || 0,
+      oldWater: +r.oldWater || 0,
+      newWater: +r.newWater || 0,
+      prevDebt: Math.max(0, +r.prevDebt || 0),
+      advance: Math.max(0, +r.advance || 0),
+      paid: !!r.paid,
+      paidAt: r.paidAt ? String(r.paidAt) : "",
+      elecDate: r.elecDate ? String(r.elecDate) : "",
+      waterDate: r.waterDate ? String(r.waterDate) : "",
+      isNew: false,
+    };
   });
 
   // Lưu vào history (kèm snapshot __*)
@@ -250,10 +254,15 @@ export function importHistoryMonth(monthKey /* 'YYYY-MM' */, rows) {
         oldElec: +r.newElec || 0,
         oldWater: +r.newWater || 0,
         prevDebt: carry, // ghi đè bằng phần còn thiếu
+        updatedAt: nowIso(),
+        __pendingSync: true,
       };
     });
 
     setJSON(KEYS.current, updated);
     setStr(markerKey, monthKey); // đánh dấu đã áp
+    if (isInRoom()) {
+      pushAllToRoom();
+    }
   }
 }

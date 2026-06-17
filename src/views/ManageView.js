@@ -9,10 +9,11 @@ import {
   removeResident,
   computeAmounts,
   renameResidentInHistory,
+  overrideLatestHistoryRemaining,
 } from "../state/readings.js";
 import { enforceIntegerInput } from "../utils/numeric.js";
 import { ZONES, zoneLabel } from "../state/zones.js";
-import { isInRoom, pushOneResident, pushDeleteResident } from "../sync/room.js";
+import { isInRoom, pushOneResident, pushDeleteResident, pushHistoryAll } from "../sync/room.js";
 import { ensureAuth } from "../sync/firebase.js";
 import { showLoading } from "../ui/busy.js";
 import { showToast } from "../ui/toast.js";
@@ -229,6 +230,16 @@ export function mount(el, idx) {
     el.querySelector("#" + id).addEventListener("change", () => refreshPreview(el, it));
   });
 
+  // [FIX] UX: Khi huỷ "Đã đóng", xoá ô Tạm ứng để không bị kẹt bằng với Tổng
+  const paidChk = el.querySelector("#paidChk");
+  const advanceInp = el.querySelector("#advance");
+  paidChk.addEventListener("change", () => {
+    if (!paidChk.checked) {
+      advanceInp.value = "";
+      refreshPreview(el, it);
+    }
+  });
+
   // Phím tắt
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && ["newElec","newWater","prevDebt","advance","name","addrInp"].includes(e.target.id)) {
@@ -287,21 +298,27 @@ export function mount(el, idx) {
         prevDebt, advance, paid,
       });
 
+      let historyChanged = false;
       try {
         const freshAfterSave = listResidents()[targetIdx];
         renameResidentInHistory(currentOldIt, freshAfterSave);
+        // Ghi đè lịch sử gần nhất nếu có sự thay đổi nợ cũ từ admin
+        if (prevDebt !== Number(currentOldIt.prevDebt || 0)) {
+          historyChanged = overrideLatestHistoryRemaining(freshAfterSave, prevDebt);
+        }
       } catch (e) {
-        console.warn("renameResidentInHistory:", e);
+        console.warn("renameResidentInHistory/override:", e);
       }
 
       if (isInRoom()) {
         const fresh = listResidents()[targetIdx];
         try { 
           await pushOneResident(fresh); 
+          if (historyChanged) await pushHistoryAll();
           showToast("Đã cập nhật và đồng bộ.", "success");
         } catch (err) { 
           showToast("Lỗi đồng bộ mới: " + (err?.message || err), "error");
-          console.warn("pushOneResident:", err); 
+          console.warn("push:", err); 
         }
       } else {
         showToast("Đã lưu thay đổi cục bộ.", "success");

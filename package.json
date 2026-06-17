@@ -2,12 +2,12 @@
   "name": "dien-nuoc-app",
   "description": "Ung dung quan ly chi so dien nuoc cho ho gia dinh va khu tro, ho tro dong bo Firebase, sao luu va xuat bao cao.",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:apk": "vite build --mode apk && npx cap sync android",
+    "build:apk": "node scripts/increment-version.js && vite build --mode apk && npx cap sync android",
     "preview": "vite preview",
     "test": "echo \"No tests yet\" && exit 0"
   },
@@ -30,5 +30,4 @@
     "qrcode": "^1.5.4",
     "xlsx": "^0.18.5"
   }
-  
 }

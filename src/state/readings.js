@@ -12,6 +12,15 @@ const toInt = (v, def = 0) => {
 
 // làm tròn nghìn
 const roundK = (n) => Math.round((Number(n) || 0) / 1000) * 1000;
+const nowIso = () => new Date().toISOString();
+
+function markLocalMutation(row) {
+  return {
+    ...row,
+    updatedAt: nowIso(),
+    __pendingSync: true,
+  };
+}
 
 function carryRemaining(row) {
   if (!row) return 0;
@@ -113,6 +122,8 @@ function normalizeResident(r) {
     active: r.active !== false,
     movedOutAt: r.movedOutAt || "",
     updatedAt: r.updatedAt || r.updated_at || "",
+    __pendingSync: !!r.__pendingSync,
+    isSynced: !!r.isSynced,
 
     // Persist snapshot fields if they exist
     __elec: r.__elec,
@@ -205,6 +216,8 @@ export function addResident({
     advance: 0,
     paid: false,
     paidAt: "",
+    updatedAt: nowIso(),
+    __pendingSync: true,
   });
 
   ensureUniqueResidentKey(arr, row);
@@ -230,7 +243,7 @@ export function updateInline(idx, { newElec, newWater }) {
   if (nw !== it.newWater) { patch.newWater = nw; patch.waterDate = today; }
 
   // Không cần đụng isNew: normalizeResident sẽ đảm bảo đúng theo chỉ số cũ
-  arr[idx] = normalizeResident({ ...it, ...patch });
+  arr[idx] = normalizeResident(markLocalMutation({ ...it, ...patch }));
   saveResidents(arr);
   return arr[idx];
 }
@@ -292,7 +305,7 @@ export function updateFull(idx, patch) {
     merged.paidAt = merged.paid ? today : "";
   }
 
-  const nextRow = normalizeResident(merged);
+  const nextRow = normalizeResident(markLocalMutation(merged));
   ensureUniqueResidentKey(arr, nextRow, idx);
   arr[idx] = nextRow;
   saveResidents(arr);
@@ -335,7 +348,7 @@ export function updateFullAdmin(idx, patch) {
   if (patch.hasOwnProperty("advance"))  merged.advance  = Math.max(0, Number(patch.advance)  || 0);
   if (patch.hasOwnProperty("paid"))    { merged.paid    = !!patch.paid; merged.paidAt = merged.paid ? today : ""; }
 
-  const nextRow = normalizeResident(merged);
+  const nextRow = normalizeResident(markLocalMutation(merged));
   ensureUniqueResidentKey(arr, nextRow, idx);
   arr[idx] = nextRow;
   saveResidents(arr);
@@ -358,7 +371,9 @@ export function addAdvance(idx, amount) {
     ...it,
     advance: nextAdvance,
     paid,
-    paidAt: paid ? today : (it.paid ? it.paidAt : "")
+    paidAt: paid ? today : (it.paid ? it.paidAt : ""),
+    updatedAt: nowIso(),
+    __pendingSync: true,
   });
 
   saveResidents(arr);
@@ -390,7 +405,7 @@ export function setPaid(idx, paid) {
   const now = todayISO();
 
   const patch = { paid: !!paid, paidAt: paid ? now : "" };
-  arr[idx] = normalizeResident({ ...it, ...patch });
+  arr[idx] = normalizeResident(markLocalMutation({ ...it, ...patch }));
   saveResidents(arr);
   return arr[idx];
 }
@@ -400,7 +415,7 @@ export function setPrevDebt(idx, amount) {
   const arr = listResidents();
   const it = arr[idx];
   if (!it) throw new Error("Không tìm thấy cư dân");
-  arr[idx] = normalizeResident({ ...it, prevDebt: Math.max(0, Number(amount) || 0) });
+  arr[idx] = normalizeResident(markLocalMutation({ ...it, prevDebt: Math.max(0, Number(amount) || 0) }));
   saveResidents(arr);
   return arr[idx];
 }
@@ -594,6 +609,50 @@ export function renameResidentInHistory(oldResident, newResident) {
   return touched;
 }
 
+/**
+ * Ghi đè số còn thiếu (__remaining) ở tháng gần nhất của cư dân trong lịch sử
+ * để khớp với số nợ cũ (prevDebt) do admin vừa sửa tay.
+ * Trả về true nếu có thay đổi để UI biết mà sync.
+ */
+export function overrideLatestHistoryRemaining(resident, newDebt) {
+  const curMonth = getCurrentMonth();
+  const hist = getHistory();
+  const months = Object.keys(hist).filter(m => m <= curMonth).sort();
+  if (!months.length) return false;
+
+  const targetId = residentIdOf(resident);
+  const targetKey = residentKey(resident || {});
+  
+  // Tìm tháng gần nhất có chứa cư dân này
+  for (let i = months.length - 1; i >= 0; i--) {
+    const monthKey = months[i];
+    const rows = hist[monthKey] || [];
+    const idx = rows.findIndex(r => (targetId && residentIdOf(r) === targetId) || residentKey(r) === targetKey);
+    
+    if (idx !== -1) {
+      const row = rows[idx];
+      const oldRemain = Math.max(0, Number(row.__remaining || 0));
+      if (oldRemain === newDebt) return false; // Không đổi
+
+      // Ép số còn thiếu ở lịch sử thành số nợ mới
+      row.__remaining = newDebt;
+      if (newDebt > 0 && row.paid) {
+        row.paid = false;
+        row.paidAt = "";
+      }
+      
+      hist[monthKey][idx] = row;
+      saveHistory(hist);
+      
+      // Kích hoạt dồn nợ lan truyền nếu có tháng sau
+      propagateDebtUpdates(monthKey, row);
+      recomputePrevDebtFromHistory();
+      return true;
+    }
+  }
+  return false;
+}
+
 /* ---------------- FIX DỒN NỢ LAN TRUYỀN (CHAIN UPDATES) ---------------- */
 /**
  * Khi sửa tháng T (monthKey), hàm này tìm tháng T+1, cập nhật PrevDebt = Remaining(T).
@@ -718,7 +777,12 @@ export function recomputePrevDebtFromHistory() {
     const nextDebt = r?.paid ? 0 : roundK(remain); // ✅ added roundK
 
     if (toInt(it.prevDebt) === toInt(nextDebt)) return it;
-    return normalizeResident({ ...it, prevDebt: nextDebt });
+    return normalizeResident({
+      ...it,
+      prevDebt: nextDebt,
+      updatedAt: nowIso(),
+      __pendingSync: true,
+    });
   });
 
   saveResidents(updated);
